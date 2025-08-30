@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from src.team_manager import TeamManager
 
 
 def show_team_dashboard():
@@ -8,8 +9,7 @@ def show_team_dashboard():
         st.warning("⚠️ Please upload data and select a team first!")
         return
 
-    # Use inline team manager to avoid import issues
-    team_manager = BasicTeamManager(st.session_state.data_processor)
+    team_manager = TeamManager(st.session_state.data_processor)
     team = st.session_state.selected_team
 
     # Page header
@@ -36,86 +36,6 @@ def show_team_dashboard():
 
     with tab3:
         show_detailed_stats(analysis)
-
-
-class BasicTeamManager:
-    """Simple team manager without complex imports"""
-
-    def __init__(self, data_processor):
-        self.data_processor = data_processor
-
-    def get_squad_analysis(self, team: str):
-        """Get basic squad analysis"""
-        team_players = self.data_processor.get_team_players(team)
-
-        if not team_players:
-            return {}
-
-        analysis = {'starters': {}, 'subs': {}, 'stats': {}}
-
-        # Basic stats
-        total_players = sum(len(df) for df in team_players.values())
-        ages = []
-        total_minutes = 0
-
-        for df in team_players.values():
-            if 'Idade' in df.columns:
-                ages.extend(df['Idade'].dropna().tolist())
-            if 'Minutos jogados' in df.columns:
-                total_minutes += df['Minutos jogados'].sum()
-
-        analysis['stats'] = {
-            'total_players': total_players,
-            'average_age': round(sum(ages) / len(ages), 1) if ages else 0,
-            'total_minutes': total_minutes,
-            'positions': len(team_players)
-        }
-
-        # Simple classification
-        for pos, df in team_players.items():
-            if not df.empty:
-                df_sorted = df.sort_values('Minutos jogados', ascending=False)
-                # First player is starter, rest are subs
-                analysis['starters'][pos] = df_sorted.head(1)
-                analysis['subs'][pos] = df_sorted.tail(len(df_sorted) - 1)
-
-        return analysis
-
-    def get_player_card_data(self, player, is_starter: bool):
-        """Get basic player card data"""
-        return {
-            'name': player.get('Jogador', 'Unknown'),
-            'age': player.get('Idade', 'N/A'),
-            'minutes': int(player.get('Minutos jogados', 0)),
-            'goals': int(player.get('Gols', 0)),
-            'assists': int(player.get('Assistências', 0)),
-            'is_starter': is_starter,
-            'position_file': player.get('Position_File', ''),
-            'nationality': player.get('Nacionalidade', 'N/A'),
-            'foot': player.get('Pé', 'N/A')
-        }
-
-    def get_formation_data(self, team: str):
-        """Get simple formation data"""
-        analysis = self.get_squad_analysis(team)
-        formation = {'GK': [], 'DEF': [], 'MID': [], 'ATT': []}
-
-        # Group positions
-        position_groups = {
-            'GK': ['GR'],
-            'DEF': ['DCE', 'DCD', 'DE', 'DD'],
-            'MID': ['EE', 'ED', 'MCD', 'MC'],
-            'ATT': ['PL']
-        }
-
-        for line, positions in position_groups.items():
-            for pos in positions:
-                if pos in analysis.get('starters', {}):
-                    starters_df = analysis['starters'][pos]
-                    for _, player in starters_df.iterrows():
-                        formation[line].append(self.get_player_card_data(player, True))
-
-        return formation
 
 
 def show_team_stats(stats: dict):
@@ -166,17 +86,17 @@ def show_squad_list(analysis: dict, team_manager: TeamManager):
             # Show starters first
             if pos in analysis['starters'] and not analysis['starters'][pos].empty:
                 st.markdown("**🟢 Starters**")
-                show_position_players(analysis['starters'][pos], team_manager, True)
+                show_position_players(analysis['starters'][pos], team_manager, True, pos)
 
             # Show substitutes
             if pos in analysis['subs'] and not analysis['subs'][pos].empty:
                 st.markdown("**⚪ Substitutes**")
-                show_position_players(analysis['subs'][pos], team_manager, False)
+                show_position_players(analysis['subs'][pos], team_manager, False, pos)
 
             st.divider()
 
 
-def show_position_players(df, team_manager, is_starter: bool):
+def show_position_players(df, team_manager, is_starter: bool, position: str):
     """Display players for a specific position"""
 
     # Show players in rows of 3
@@ -189,34 +109,27 @@ def show_position_players(df, team_manager, is_starter: bool):
         for j, col in enumerate(cols):
             if i + j < len(players_list):
                 player = players_list[i + j]
-                player_data = team_manager.get_player_card_data(pd.Series(player), is_starter)
+
+                # Add position info to player data
+                player_series = pd.Series(player)
+                player_series['Position_File'] = position
+
+                player_data = team_manager.get_player_card_data(player_series, is_starter)
 
                 with col:
-                    show_player_card(player_data, f"{i}_{j}")
+                    show_player_card(player_data, f"{position}_{i}_{j}")
 
 
 def show_player_card(player_data: dict, unique_id: str = ""):
     """Display individual player card"""
 
-    # Card styling
-    border_color = "#28a745" if player_data['is_starter'] else "#6c757d"
+    # Card styling without border rectangles
     status_icon = "🟢" if player_data['is_starter'] else "⚪"
 
-    # Create unique key using position + unique_id + minutes to avoid duplicates
-    card_key = f"player_{player_data['position_file']}_{unique_id}_{player_data['minutes']}"
+    # Create unique key
+    card_key = f"player_{unique_id}_{player_data['name']}_{player_data['minutes']}"
 
     with st.container():
-        st.markdown(f"""
-        <div style="
-            border: 2px solid {border_color};
-            border-radius: 10px;
-            padding: 15px;
-            margin: 10px 0;
-            background-color: rgba(255,255,255,0.05);
-            cursor: pointer;
-        ">
-        """, unsafe_allow_html=True)
-
         # Player header
         col1, col2 = st.columns([3, 1])
         with col1:
@@ -242,45 +155,64 @@ def show_player_card(player_data: dict, unique_id: str = ""):
             st.metric("Assists", player_data['assists'])
 
         # Additional info
-        st.caption(f"👣 {player_data['foot']} foot | {player_data['nationality']}")
+        st.caption(f"👣 {player_data['foot']} foot")
 
-        st.markdown("</div>", unsafe_allow_html=True)
+        # Add subtle separator
+        st.markdown("---")
 
 
 def show_formation_view(team_manager, team: str):
-    """Display simple formation view without field"""
+    """Display simple formation view"""
     st.subheader("⚽ Starting XI")
 
     formation_data = team_manager.get_formation_data(team)
 
-    # Simple formation display without field visualization
+    # Simple formation display
     formation_order = [('🥅 Goalkeeper', 'GK'), ('🛡️ Defense', 'DEF'), ('⚽ Midfield', 'MID'), ('🎯 Attack', 'ATT')]
 
     for line_name, line_key in formation_order:
         if line_key in formation_data and formation_data[line_key]:
-            st.markdown(f"**{line_name}**")
+            st.markdown(f"**{line_name} ({len(formation_data[line_key])} players)**")
 
             players = formation_data[line_key]
-            cols = st.columns(len(players))
 
-            for i, player in enumerate(players):
-                with cols[i]:
-                    show_simple_formation_card(player, f"{line_key}_{i}")
+            # Show players in a row
+            if len(players) <= 4:
+                cols = st.columns(len(players))
+                for i, player in enumerate(players):
+                    with cols[i]:
+                        show_formation_card(player, f"{line_key}_{i}")
+            else:
+                # If more than 4 players, show in multiple rows
+                for i in range(0, len(players), 4):
+                    row_players = players[i:i + 4]
+                    cols = st.columns(len(row_players))
+                    for j, player in enumerate(row_players):
+                        with cols[j]:
+                            show_formation_card(player, f"{line_key}_{i}_{j}")
 
             st.markdown("---")
 
+    # Formation summary
+    formation_counts = []
+    for line_key in ['DEF', 'MID', 'ATT']:
+        count = len(formation_data.get(line_key, []))
+        if count > 0:
+            formation_counts.append(str(count))
 
-def show_simple_formation_card(player_data: dict, unique_id: str):
-    """Display simple player card for formation view"""
+    if formation_counts:
+        st.info(f"🏟️ Formation: {'-'.join(formation_counts)}")
 
+
+def show_formation_card(player_data: dict, unique_id: str):
+    """Display player card for formation view"""
+
+    # Simple formation card without border rectangles
     st.markdown(f"""
     <div style="
-        border: 2px solid #28a745;
-        border-radius: 8px;
+        text-align: center;
         padding: 10px;
         margin: 5px auto;
-        text-align: center;
-        background-color: rgba(40, 167, 69, 0.1);
         max-width: 150px;
     ">
         <div style="font-weight: bold; color: #ffffff; margin-bottom: 5px;">
@@ -293,7 +225,7 @@ def show_simple_formation_card(player_data: dict, unique_id: str):
     """, unsafe_allow_html=True)
 
     # Add view button with unique key
-    button_key = f"formation_view_{unique_id}_{player_data.get('minutes', 0)}"
+    button_key = f"formation_{unique_id}_{player_data.get('name', '')}_{player_data.get('minutes', 0)}"
     if st.button("View", key=button_key, help=f"View {player_data.get('name')} profile"):
         st.session_state.selected_player = {
             'name': player_data.get('name'),
@@ -407,7 +339,3 @@ def show_detailed_stats(analysis: dict):
         st.metric("Total Assists", int(total_assists))
     with col3:
         st.metric("Total Matches", int(total_matches))
-
-
-# Import pandas for the stats function
-import pandas as pd

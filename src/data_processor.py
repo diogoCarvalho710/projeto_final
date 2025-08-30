@@ -38,20 +38,50 @@ class DataProcessor:
             if all(col in df.columns for col in ['Jogador', 'Minutos jogados', 'Idade']):
                 df = df.drop_duplicates(subset=['Jogador', 'Minutos jogados', 'Idade'])
 
-            # Convert numeric columns
-            numeric_cols = df.select_dtypes(include=[np.number]).columns
-            for col in numeric_cols:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            # Convert numeric columns more carefully
+            for col in df.columns:
+                if col not in ['Jogador', 'Time', 'Nacionalidade', 'Pé', 'Altura', 'Valor de mercado',
+                               'Data de nascimento', 'Contrato expira em', 'Posição', 'Temporada']:
+                    # Try to convert to numeric
+                    try:
+                        # Handle percentage strings like "72%"
+                        if df[col].dtype == 'object':
+                            # First convert to string and handle percentages
+                            df[col] = df[col].astype(str)
+
+                            # Remove % symbol if present
+                            df[col] = df[col].str.replace('%', '')
+
+                            # Handle European decimal format (comma to dot)
+                            df[col] = df[col].str.replace(',', '.')
+
+                            # Replace 'nan' strings with actual NaN
+                            df[col] = df[col].replace('nan', np.nan)
+
+                        # Convert to numeric
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+                        # Fill NaN with 0 for numeric columns
+                        df[col] = df[col].fillna(0)
+
+                    except Exception as e:
+                        # If conversion fails, leave as is
+                        print(f"Could not convert column {col} in {pos}: {e}")
+                        continue
 
             # Calculate per 90 metrics
             if 'Minutos jogados' in df.columns:
-                minutes_played = df['Minutos jogados'].replace(0, 1)
+                minutes_played = df['Minutos jogados'].replace(0, 1)  # Avoid division by zero
 
                 for metric in METRICS_PER_90:
                     if metric in df.columns:
-                        # Convert to numeric first
-                        df[metric] = pd.to_numeric(df[metric], errors='coerce').fillna(0)
-                        df[f'{metric}_per90'] = (df[metric] * 90 / minutes_played).round(2)
+                        # Ensure both metric and minutes are numeric
+                        try:
+                            metric_values = pd.to_numeric(df[metric], errors='coerce').fillna(0)
+                            df[f'{metric}_per90'] = (metric_values * 90 / minutes_played).round(2)
+                        except Exception as e:
+                            print(f"Could not calculate per90 for {metric} in {pos}: {e}")
+                            continue
 
             self.dataframes[pos] = df
 
@@ -95,3 +125,11 @@ class DataProcessor:
         if all_players:
             return pd.concat(all_players, ignore_index=True)
         return pd.DataFrame()
+
+    def get_numeric_columns(self, position: str) -> List[str]:
+        """Get list of numeric columns for a position"""
+        if position in self.dataframes:
+            df = self.dataframes[position]
+            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+            return numeric_cols
+        return []

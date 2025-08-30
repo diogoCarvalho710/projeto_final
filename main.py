@@ -3,11 +3,13 @@ import sys
 import os
 import pickle
 import json
+import pandas as pd
 from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.data_processor import DataProcessor
+from src.team_manager import TeamManager
 from src.config import PAGE_CONFIG
 
 
@@ -234,102 +236,14 @@ def show_welcome_screen():
 
 def show_team_dashboard_page():
     """Show team dashboard page"""
-    # Import the function directly
-    import importlib.util
-    import os
-
-    # Get the path to the team_dashboard file
-    dashboard_path = os.path.join(os.path.dirname(__file__), 'pages', 'team_dashboard.py')
-
-    try:
-        # Load the module dynamically
-        spec = importlib.util.spec_from_file_location("team_dashboard", dashboard_path)
-        team_dashboard = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(team_dashboard)
-
-        # Call the function
-        team_dashboard.show_team_dashboard()
-    except Exception as e:
-        st.error(f"Error loading team dashboard: {e}")
-
-        # Fallback - show basic team info
-        show_basic_dashboard()
+    from pages.team_dashboard import show_team_dashboard
+    show_team_dashboard()
 
 
 def show_player_profile_page():
     """Show player profile page"""
-    st.title("👤 Player Profile")
-
-    if st.session_state.selected_player:
-        player_name = st.session_state.selected_player['name']
-        position = st.session_state.selected_player['position']
-
-        st.subheader(f"Profile: {player_name} ({position})")
-
-        # Get player data
-        player_data = st.session_state.data_processor.get_player_data(player_name, position)
-
-        if player_data is not None:
-            # Basic info
-            col1, col2, col3, col4 = st.columns(4)
-
-            with col1:
-                st.metric("Age", player_data.get('Idade', 'N/A'))
-            with col2:
-                st.metric("Height", player_data.get('Altura', 'N/A'))
-            with col3:
-                st.metric("Nationality", player_data.get('Nacionalidade', 'N/A'))
-            with col4:
-                st.metric("Foot", player_data.get('Pé', 'N/A'))
-
-            # Performance metrics
-            st.subheader("📊 Performance Metrics")
-
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Minutes Played", int(player_data.get('Minutos jogados', 0)))
-            with col2:
-                st.metric("Goals", int(player_data.get('Gols', 0)))
-            with col3:
-                st.metric("Assists", int(player_data.get('Assistências', 0)))
-            with col4:
-                st.metric("Market Value", player_data.get('Valor de mercado', 'N/A'))
-
-            # Show all available metrics
-            st.subheader("🔍 All Metrics")
-
-            # Filter out non-numeric and basic info columns
-            exclude_cols = ['Jogador', 'Time', 'Nacionalidade', 'Pé', 'Altura', 'Valor de mercado']
-            numeric_cols = [col for col in player_data.index if
-                            col not in exclude_cols and pd.api.types.is_numeric_dtype(type(player_data[col]))]
-
-            # Display metrics in columns
-            metrics_per_row = 4
-            for i in range(0, len(numeric_cols), metrics_per_row):
-                cols = st.columns(metrics_per_row)
-                for j, col in enumerate(cols):
-                    if i + j < len(numeric_cols):
-                        metric_name = numeric_cols[i + j]
-                        metric_value = player_data[metric_name]
-
-                        # Format value
-                        if isinstance(metric_value, float):
-                            formatted_value = f"{metric_value:.2f}"
-                        else:
-                            formatted_value = str(metric_value)
-
-                        with col:
-                            st.metric(metric_name, formatted_value)
-
-        else:
-            st.error(f"Player {player_name} not found in {position} data!")
-    else:
-        st.info("👆 Select a player from the Team Dashboard to view their profile!")
-
-        # Back button
-        if st.button("🏠 Back to Team Dashboard"):
-            st.session_state.current_page = 'dashboard'
-            st.rerun()
+    from pages.player_profile import show_player_profile
+    show_player_profile()
 
 
 def show_scouting_page():
@@ -373,9 +287,6 @@ def show_settings_page():
     - ⭐ Favorites management
     """)
 
-
-# Import pandas for player profile
-import pandas as pd
 
 if __name__ == "__main__":
     main()
