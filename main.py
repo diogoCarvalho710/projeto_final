@@ -10,6 +10,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.data_processor import DataProcessor
 from src.team_manager import TeamManager
+from src.comparison_manager import ComparisonManager
 from src.config import PAGE_CONFIG
 
 
@@ -49,7 +50,8 @@ def save_session_config():
         config = {
             'selected_team': st.session_state.selected_team,
             'has_data': st.session_state.data_processor is not None,
-            'current_page': st.session_state.get('current_page', 'dashboard')
+            'current_page': st.session_state.get('current_page', 'dashboard'),
+            'comparison_players': st.session_state.get('comparison_players', [])
         }
         with open(data_dir / "session_config.json", "w") as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
@@ -86,6 +88,8 @@ def initialize_session_state():
         st.session_state.show_duplicate_analysis = False
     if 'ranking_system' not in st.session_state:
         st.session_state.ranking_system = None
+    if 'comparison_manager' not in st.session_state:
+        st.session_state.comparison_manager = None
     if 'comparison_players' not in st.session_state:
         st.session_state.comparison_players = []
 
@@ -101,6 +105,8 @@ def initialize_session_state():
         st.session_state.selected_team = saved_config['selected_team']
     if saved_config.get('current_page'):
         st.session_state.current_page = saved_config['current_page']
+    if saved_config.get('comparison_players'):
+        st.session_state.comparison_players = saved_config['comparison_players']
 
 
 def main():
@@ -113,10 +119,15 @@ def main():
     if st.session_state.data_processor:
         st.sidebar.success("📊 Data loaded from previous session")
 
+        # Show comparison status
+        comparison_count = len(st.session_state.get('comparison_players', []))
+        if comparison_count > 0:
+            st.sidebar.info(f"⚖️ {comparison_count}/5 players in comparison")
+
         # Show deduplication info
         duplicate_analysis = st.session_state.data_processor.get_duplicate_analysis()
         if duplicate_analysis['potential_duplicates'] > 0:
-            st.sidebar.info(f"🔍 Found {duplicate_analysis['potential_duplicates']} potential duplicate(s)")
+            st.sidebar.warning(f"🔍 Found {duplicate_analysis['potential_duplicates']} potential duplicate(s)")
 
         # Debug button for duplicates
         if st.sidebar.button("🔍 View Duplicate Analysis"):
@@ -144,8 +155,10 @@ def main():
                     save_data_processor(st.session_state.data_processor)
                     st.sidebar.success(f"✅ {len(uploaded_files)} files loaded & saved")
 
-                    # Clear ranking system to force recreation with new data
+                    # Clear ranking system and comparison manager to force recreation with new data
                     st.session_state.ranking_system = None
+                    st.session_state.comparison_manager = None
+                    st.session_state.comparison_players = []
 
                 except Exception as e:
                     st.sidebar.error(f"❌ Error: {str(e)}")
@@ -171,7 +184,7 @@ def main():
         page_options = {
             'dashboard': '🏠 Team Dashboard',
             'player_profile': '👤 Player Profile',
-            'scouting': '🔍 Scouting',
+            'scouting': '🔍 Scouting & Comparison',
             'rankings': '📊 Rankings',
             'settings': '⚙️ Settings'
         }
@@ -231,6 +244,7 @@ def clear_saved_data():
     st.session_state.show_player_profile = False
     st.session_state.selected_player = None
     st.session_state.ranking_system = None
+    st.session_state.comparison_manager = None
     st.session_state.comparison_players = []
 
     st.success("🗑️ All saved data cleared!")
@@ -306,7 +320,7 @@ def show_duplicate_analysis():
 def show_welcome_screen():
     st.title("⚽ Football Analytics Platform")
     st.markdown("""
-    ### 🚀 Welcome to your football analytics platform!
+    ### 🚀 Welcome to your advanced football analytics platform!
 
     **To get started:**
     1. 📤 Upload Wyscout CSV files in the sidebar
@@ -315,15 +329,23 @@ def show_welcome_screen():
 
     **💾 Auto-Save Feature:**
     - Your data is automatically saved after upload
-    - Team selection is remembered
+    - Team selection and comparisons are remembered
     - No need to re-upload after refresh!
 
     **🔧 Available Features:**
     - 🏠 **Team Dashboard**: Squad overview with starters/subs
-    - 👤 **Player Profiles**: Detailed individual analysis
-    - 🔍 **Scouting**: Advanced player search and comparison ✨ **NEW!**
-    - 📊 **Rankings**: Custom rankings by position
+    - 👤 **Player Profiles**: Detailed individual analysis with radar charts
+    - 🔍 **Advanced Scouting**: Player search, rankings, and comparison system ✨ **ENHANCED!**
+    - 📊 **Rankings**: Performance rankings by position  
     - ⚙️ **Settings**: Personalization and configuration
+
+    **🆕 Phase 4 - Scouting System:**
+    - ✅ **Advanced filtering** by age, nationality, performance metrics
+    - ✅ **Dynamic rankings** with percentiles and weighted scoring
+    - ✅ **Multi-player comparison** with radar charts and statistics
+    - ✅ **Export functionality** to CSV
+    - ✅ **Similar player suggestions** and batch adding
+    - ✅ **Interactive charts** with highlighted comparison players
     """)
 
 
@@ -340,7 +362,7 @@ def show_player_profile_page():
 
 
 def show_scouting_page():
-    """Show scouting page"""
+    """Show enhanced scouting page"""
     try:
         from pages.scouting import show_scouting
         show_scouting()
@@ -348,7 +370,7 @@ def show_scouting_page():
         st.error(f"Error loading scouting page: {str(e)}")
         st.markdown("""
         **Possible causes:**
-        - Missing files: `src/ranking_system.py`, `components/filters.py`, `components/charts.py`
+        - Missing files: `src/ranking_system.py`, `src/comparison_manager.py`, `components/filters.py`, `components/charts.py`
         - Data not loaded properly
         - Import errors
 
@@ -369,35 +391,43 @@ def show_scouting_page():
 
 def show_rankings_page():
     """Show rankings page (placeholder)"""
-    st.title("📊 Rankings System")
-    st.info("🚧 Advanced rankings customization will be implemented in Fase 5!")
+    st.title("📊 Advanced Rankings System")
+    st.info("🚧 Phase 5: Custom rankings creator will be implemented next!")
 
     st.markdown("""
-    **✅ Already Available:**
+    **✅ Currently Available (Phase 4):**
     - 🔍 **Pre-defined rankings** in the Scouting page
     - 🏆 **Position-specific scoring** with percentiles
     - ⚖️ **Weighted metrics** by position
+    - 📊 **Real-time filtering and comparison**
 
-    **Coming in Fase 5:**
-    - 🎯 Custom ranking creation
-    - 📈 Advanced percentile analysis
-    - ⚖️ Adjustable scoring weights
-    - 💾 Save/load custom rankings
+    **Coming in Phase 5:**
+    - 🎯 Custom ranking creation tool
+    - 📈 Adjustable weights and scoring systems
+    - ⚖️ Save/load custom ranking templates
+    - 💾 Export custom rankings
+    - 🎨 Advanced visualization options
     """)
 
 
 def show_settings_page():
     """Show settings page (placeholder)"""
-    st.title("⚙️ Settings & Configuration")
-    st.info("🚧 Advanced settings will be implemented in Fase 5!")
+    st.title("⚙️ Settings & Personalization")
+    st.info("🚧 Phase 5: Advanced personalization features coming next!")
 
     st.markdown("""
-    **Coming Soon:**
-    - 🎨 Custom metrics creation
-    - 📊 Personalized radar charts
-    - 💾 Export/Import configurations
-    - ⭐ Favorites management
-    - 🔧 Scouting preferences
+    **Coming in Phase 5:**
+    - 🎨 **Custom metrics creation** (combine existing metrics with weights)
+    - 📊 **Personalized radar charts** (choose your own metrics)
+    - 💾 **Configuration templates** (save/load your setups)
+    - ⭐ **Favorites system** (bookmark players and configurations)
+    - 🔧 **Advanced scouting preferences**
+    - 📥 **Export/Import settings** (JSON format)
+
+    **Phase 6:**
+    - 🎯 **ML-powered recommendations**
+    - 📈 **Performance prediction models**
+    - 🔍 **Smart player matching**
     """)
 
 

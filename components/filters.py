@@ -125,8 +125,7 @@ class ScoutingFilters:
         }
 
     @staticmethod
-    def show_performance_filters(position: str, data_processor, current_team: str, key: str = "performance") -> Dict[
-        str, float]:
+    def show_performance_filters(position: str, data_processor, current_team: str, key: str = "performance") -> Dict[str, float]:
         """Show advanced performance filters with dynamic metrics and threshold options"""
 
         st.markdown("📊 **Performance Filters**")
@@ -141,7 +140,7 @@ class ScoutingFilters:
         # Get numeric columns (exclude basic info columns)
         exclude_cols = ['Jogador', 'Time', 'Nacionalidade', 'Pé', 'Altura', 'Valor de mercado',
                         'Data de nascimento', 'Posição', 'Temporada', 'Idade', 'Partidas jogadas',
-                        'Minutos jogados', 'Position_File']
+                        'Minutos jogados', 'Position_File', 'Index', 'Contrato expira em']
 
         numeric_cols = []
         for col in position_df.columns:

@@ -23,9 +23,9 @@ class ScoutingCharts:
         fig = go.Figure()
 
         # Color palette for players
-        colors = ['rgb(79, 70, 229)', 'rgb(239, 68, 68)', 'rgb(34, 197, 94)', 'rgb(251, 191, 36)']
+        colors = ['rgb(79, 70, 229)', 'rgb(239, 68, 68)', 'rgb(34, 197, 94)', 'rgb(251, 191, 36)', 'rgb(168, 85, 247)']
 
-        for i, player_data in enumerate(players_data[:4]):  # Max 4 players
+        for i, player_data in enumerate(players_data[:5]):  # Max 5 players
             player_name = player_data.get('Player', 'Unknown')
 
             # Extract percentile values for radar
@@ -354,7 +354,21 @@ class ScoutingCharts:
             'Partidas jogadas': 'Matches',
             'Passes chave': 'Key Passes',
             'Passes precisos': 'Accurate Passes',
-            'Overall_Score': 'Overall Score'
+            'Passes precisos %': 'Pass Accuracy %',
+            'Overall_Score': 'Overall Score',
+            'Defesas': 'Saves',
+            'Defesas, %': 'Save %',
+            'Gols sofridos': 'Goals Conceded',
+            'Desarmes': 'Tackles',
+            'Interceptações': 'Interceptions',
+            'Dribles': 'Dribbles',
+            'Cruzamentos': 'Crosses',
+            'xG': 'Expected Goals',
+            'xA': 'Expected Assists',
+            'Gols': 'Goals',
+            'Assistências': 'Assists',
+            'Chutes': 'Shots',
+            'Faltas': 'Fouls'
         }
 
         return shortenings.get(metric, metric)
@@ -424,3 +438,34 @@ class ScoutingCharts:
         )
 
         st.plotly_chart(fig, use_container_width=True)
+
+    @staticmethod
+    def show_comparison_summary(comparison_players: List[Dict]) -> None:
+        """Show summary cards for comparison players"""
+
+        if not comparison_players:
+            return
+
+        st.markdown("### 👥 Players in Comparison")
+
+        # Create columns for each player
+        cols = st.columns(len(comparison_players))
+
+        for i, (col, player) in enumerate(zip(cols, comparison_players)):
+            with col:
+                # Player card
+                st.markdown(f"""
+                <div style="
+                    border: 2px solid #3b82f6;
+                    border-radius: 8px;
+                    padding: 10px;
+                    text-align: center;
+                    background-color: rgba(59, 130, 246, 0.1);
+                ">
+                    <h4>{player['name']}</h4>
+                    <p><strong>{player['team']}</strong></p>
+                    <p>Age: {player['age']} | {player['position']}</p>
+                    <p>Minutes: {player['minutes']}</p>
+                    <p>Score: {player['overall_score']:.1f}</p>
+                </div>
+                """, unsafe_allow_html=True)
