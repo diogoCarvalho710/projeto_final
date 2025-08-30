@@ -84,6 +84,10 @@ def initialize_session_state():
         st.session_state.selected_player = None
     if 'show_duplicate_analysis' not in st.session_state:
         st.session_state.show_duplicate_analysis = False
+    if 'ranking_system' not in st.session_state:
+        st.session_state.ranking_system = None
+    if 'comparison_players' not in st.session_state:
+        st.session_state.comparison_players = []
 
     # Try to load saved data
     if st.session_state.data_processor is None:
@@ -139,6 +143,10 @@ def main():
                     st.session_state.data_processor = DataProcessor(uploaded_files)
                     save_data_processor(st.session_state.data_processor)
                     st.sidebar.success(f"✅ {len(uploaded_files)} files loaded & saved")
+
+                    # Clear ranking system to force recreation with new data
+                    st.session_state.ranking_system = None
+
                 except Exception as e:
                     st.sidebar.error(f"❌ Error: {str(e)}")
                     return
@@ -222,6 +230,8 @@ def clear_saved_data():
     st.session_state.current_page = 'dashboard'
     st.session_state.show_player_profile = False
     st.session_state.selected_player = None
+    st.session_state.ranking_system = None
+    st.session_state.comparison_players = []
 
     st.success("🗑️ All saved data cleared!")
 
@@ -311,7 +321,7 @@ def show_welcome_screen():
     **🔧 Available Features:**
     - 🏠 **Team Dashboard**: Squad overview with starters/subs
     - 👤 **Player Profiles**: Detailed individual analysis
-    - 🔍 **Scouting**: Advanced player search and comparison
+    - 🔍 **Scouting**: Advanced player search and comparison ✨ **NEW!**
     - 📊 **Rankings**: Custom rankings by position
     - ⚙️ **Settings**: Personalization and configuration
     """)
@@ -330,37 +340,56 @@ def show_player_profile_page():
 
 
 def show_scouting_page():
-    """Show scouting page (placeholder)"""
-    st.title("🔍 Scouting System")
-    st.info("🚧 Scouting system will be implemented in Fase 4!")
+    """Show scouting page"""
+    try:
+        from pages.scouting import show_scouting
+        show_scouting()
+    except Exception as e:
+        st.error(f"Error loading scouting page: {str(e)}")
+        st.markdown("""
+        **Possible causes:**
+        - Missing files: `src/ranking_system.py`, `components/filters.py`, `components/charts.py`
+        - Data not loaded properly
+        - Import errors
 
-    st.markdown("""
-    **Coming Soon:**
-    - 🔎 Advanced player search
-    - 📊 Performance filters
-    - ⚖️ Player comparisons
-    - 🏆 Rankings by position
-    """)
+        **Try:**
+        1. Check if all files exist
+        2. Clear saved data and re-upload CSVs
+        3. Restart the application
+        """)
+
+        # Debug info
+        with st.expander("🔍 Debug Info"):
+            st.write("Session State Keys:", list(st.session_state.keys()))
+            st.write("Data Processor:", st.session_state.get('data_processor') is not None)
+            st.write("Selected Team:", st.session_state.get('selected_team'))
+            if st.session_state.get('data_processor'):
+                st.write("Available Positions:", list(st.session_state.data_processor.dataframes.keys()))
 
 
 def show_rankings_page():
     """Show rankings page (placeholder)"""
     st.title("📊 Rankings System")
-    st.info("🚧 Rankings system will be implemented in Fase 4!")
+    st.info("🚧 Advanced rankings customization will be implemented in Fase 5!")
 
     st.markdown("""
-    **Coming Soon:**
-    - 🏆 Pre-defined rankings by position
+    **✅ Already Available:**
+    - 🔍 **Pre-defined rankings** in the Scouting page
+    - 🏆 **Position-specific scoring** with percentiles
+    - ⚖️ **Weighted metrics** by position
+
+    **Coming in Fase 5:**
     - 🎯 Custom ranking creation
-    - 📈 Percentile analysis
-    - ⚖️ Weighted scoring systems
+    - 📈 Advanced percentile analysis
+    - ⚖️ Adjustable scoring weights
+    - 💾 Save/load custom rankings
     """)
 
 
 def show_settings_page():
     """Show settings page (placeholder)"""
     st.title("⚙️ Settings & Configuration")
-    st.info("🚧 Settings will be implemented in Fase 5!")
+    st.info("🚧 Advanced settings will be implemented in Fase 5!")
 
     st.markdown("""
     **Coming Soon:**
@@ -368,6 +397,7 @@ def show_settings_page():
     - 📊 Personalized radar charts
     - 💾 Export/Import configurations
     - ⭐ Favorites management
+    - 🔧 Scouting preferences
     """)
 
 
