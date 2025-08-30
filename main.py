@@ -82,6 +82,8 @@ def initialize_session_state():
         st.session_state.show_player_profile = False
     if 'selected_player' not in st.session_state:
         st.session_state.selected_player = None
+    if 'show_duplicate_analysis' not in st.session_state:
+        st.session_state.show_duplicate_analysis = False
 
     # Try to load saved data
     if st.session_state.data_processor is None:
@@ -106,6 +108,15 @@ def main():
     # Show status if data is loaded
     if st.session_state.data_processor:
         st.sidebar.success("📊 Data loaded from previous session")
+
+        # Show deduplication info
+        duplicate_analysis = st.session_state.data_processor.get_duplicate_analysis()
+        if duplicate_analysis['potential_duplicates'] > 0:
+            st.sidebar.info(f"🔍 Found {duplicate_analysis['potential_duplicates']} potential duplicate(s)")
+
+        # Debug button for duplicates
+        if st.sidebar.button("🔍 View Duplicate Analysis"):
+            st.session_state.show_duplicate_analysis = True
 
         # Clear data option
         if st.sidebar.button("🗑️ Clear Saved Data"):
@@ -188,6 +199,11 @@ def main():
     else:
         show_welcome_screen()
 
+    # Show duplicate analysis if requested
+    if st.session_state.get('show_duplicate_analysis') and st.session_state.data_processor:
+        show_duplicate_analysis()
+        st.session_state.show_duplicate_analysis = False
+
 
 def clear_saved_data():
     """Clear all saved data"""
@@ -208,6 +224,73 @@ def clear_saved_data():
     st.session_state.selected_player = None
 
     st.success("🗑️ All saved data cleared!")
+
+
+def show_duplicate_analysis():
+    """Show duplicate analysis in a modal-like container"""
+
+    analysis = st.session_state.data_processor.get_duplicate_analysis()
+
+    st.markdown("---")
+    st.subheader("🔍 Duplicate Player Analysis")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric("Total Players", analysis['total_players'])
+    with col2:
+        st.metric("Unique Names", analysis['unique_names'])
+    with col3:
+        st.metric("Potential Duplicates", analysis['potential_duplicates'])
+
+    if analysis['duplicates']:
+        st.markdown("### 👥 Players with Multiple Records")
+
+        for duplicate in analysis['duplicates']:
+            # Use different styling for likely duplicates
+            if duplicate.get('likely_duplicate', False):
+                icon = "🚨"
+                status = "LIKELY DUPLICATE"
+                color = "red"
+            else:
+                icon = "🔄"
+                status = "DIFFERENT PLAYERS"
+                color = "orange"
+
+            with st.expander(f"{icon} {duplicate['name']} ({duplicate['count']} records) - {status}"):
+
+                # Create a table of the duplicate records
+                records_data = []
+                for record in duplicate['records']:
+                    records_data.append({
+                        'Position': record['position'],
+                        'Minutes': record['minutes'],
+                        'Age': record['age'],
+                        'Nationality': record['nationality'],
+                        'Team': record['team'],
+                        'Birth Date': record['birth_date']
+                    })
+
+                df_records = pd.DataFrame(records_data)
+                st.dataframe(df_records, use_container_width=True)
+
+                # Show analysis
+                if duplicate.get('likely_duplicate', False):
+                    # Show which one was kept (highest minutes)
+                    max_minutes = duplicate['max_minutes']
+                    kept_position = next(
+                        r['position'] for r in duplicate['records']
+                        if r['minutes'] == max_minutes
+                    )
+
+                    st.error(f"⚠️ **This appears to be the same player!** "
+                             f"Should be kept in **{kept_position}** position with **{max_minutes}** minutes")
+                else:
+                    st.info(f"ℹ️ These appear to be different players with the same name")
+    else:
+        st.success("✅ No duplicate players found across different positions!")
+
+    st.markdown("---")
 
 
 def show_welcome_screen():

@@ -105,7 +105,7 @@ def show_player_overview(player_data: pd.Series, position: str):
     # Personal Information
     st.subheader("ℹ️ Personal Information")
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
 
     with col1:
         st.metric("Age", f"{player_data.get('Idade', 'N/A')} years")
@@ -118,6 +118,9 @@ def show_player_overview(player_data: pd.Series, position: str):
 
     with col4:
         st.metric("Preferred Foot", player_data.get('Pé', 'N/A'))
+
+    with col5:
+        st.metric("Market Value", player_data.get('Valor de mercado', 'N/A'))
 
     st.divider()
 
@@ -139,12 +142,17 @@ def show_player_overview(player_data: pd.Series, position: str):
         st.metric("Minutes per Match", avg_minutes)
 
     with col4:
-        st.metric("Market Value", player_data.get('Valor de mercado', 'N/A'))
+        # Playing time consistency
+        if matches > 0:
+            consistency = min(100, (minutes / (matches * 90)) * 100)
+            st.metric("Playing Time %", f"{consistency:.1f}%")
+        else:
+            st.metric("Playing Time %", "0.0%")
 
     st.divider()
 
     # Key Performance Metrics
-    st.subheader("⚽ Key Performance")
+    st.subheader("⚽ Key Performance Metrics")
 
     show_key_metrics_by_position(player_data, position)
 
@@ -152,98 +160,240 @@ def show_player_overview(player_data: pd.Series, position: str):
 def show_key_metrics_by_position(player_data: pd.Series, position: str):
     """Show position-specific key metrics"""
 
+    minutes = player_data.get('Minutos jogados', 0)
+
     if position == 'GR':
-        # Goalkeeper metrics - using actual available columns
-        col1, col2, col3, col4 = st.columns(4)
+        # Goalkeeper metrics
+        col1, col2, col3, col4, col5 = st.columns(5)
+
         with col1:
-            defenses = int(player_data.get('Defesas', 0))
-            st.metric("Saves", defenses)
+            saves = player_data.get('Defesas', 0)
+            saves_per90 = (saves * 90 / minutes) if minutes > 0 else 0
+            st.metric("Saves /90", f"{saves_per90:.2f}")
+
         with col2:
             save_pct = player_data.get('Defesas, %', 0)
-            # Handle percentage strings like "72%"
-            if pd.notna(save_pct):
-                if isinstance(save_pct, str) and '%' in str(save_pct):
-                    # Remove % and convert to float
-                    try:
-                        pct_value = float(str(save_pct).replace('%', ''))
-                        st.metric("Save %", f"{pct_value:.1f}%")
-                    except:
-                        st.metric("Save %", str(save_pct))
-                else:
-                    try:
-                        st.metric("Save %", f"{float(save_pct):.1f}%")
-                    except:
-                        st.metric("Save %", str(save_pct))
+            if isinstance(save_pct, str) and '%' in str(save_pct):
+                try:
+                    pct_value = float(str(save_pct).replace('%', ''))
+                    st.metric("Saves %", f"{pct_value:.1f}%")
+                except:
+                    st.metric("Saves %", str(save_pct))
             else:
-                st.metric("Save %", "0.0%")
-        with col3:
-            goals_conceded = int(player_data.get('Gols sofridos', 0))
-            st.metric("Goals Conceded", goals_conceded)
-        with col4:
-            passes = int(player_data.get('Passes', 0))
-            st.metric("Passes", passes)
+                try:
+                    st.metric("Saves %", f"{float(save_pct):.1f}%")
+                except:
+                    st.metric("Saves %", "0.0%")
 
-    elif position in ['DCE', 'DCD', 'DE', 'DD']:
-        # Defender metrics
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            passes = int(player_data.get('Passes', 0))
-            st.metric("Passes", passes)
-        with col2:
-            accurate_passes = int(player_data.get('Passes precisos', 0))
-            st.metric("Accurate Passes", accurate_passes)
         with col3:
-            interceptions = int(player_data.get('Tentativas bem-sucedidas de interceptação de cruzamento e passe', 0))
-            st.metric("Interceptions", interceptions)
-        with col4:
-            fouls = int(player_data.get('Faltas', 0))
-            st.metric("Fouls", fouls)
+            goals_conceded = player_data.get('Gols sofridos', 0)
+            goals_per90 = (goals_conceded * 90 / minutes) if minutes > 0 else 0
+            st.metric("Goals Conceded /90", f"{goals_per90:.2f}")
 
-    elif position in ['EE', 'ED', 'MCD', 'MC']:
-        # Midfielder metrics
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            passes = int(player_data.get('Passes', 0))
-            st.metric("Passes", passes)
-        with col2:
-            key_passes = int(player_data.get('Passes chave', 0))
-            st.metric("Key Passes", key_passes)
-        with col3:
-            scoring_attacks = int(player_data.get('Participação em ataques de pontuação', 0))
-            st.metric("Scoring Attacks", scoring_attacks)
         with col4:
-            successful_actions = player_data.get('Ações / com sucesso', 0)
-            # Handle potential string values
-            try:
-                if pd.notna(successful_actions):
-                    st.metric("Successful Actions", int(float(successful_actions)))
-                else:
-                    st.metric("Successful Actions", 0)
-            except:
-                st.metric("Successful Actions", str(successful_actions))
+            pass_pct = player_data.get('Passes precisos %', 0)
+            if isinstance(pass_pct, str) and '%' in str(pass_pct):
+                try:
+                    pct_value = float(str(pass_pct).replace('%', ''))
+                    st.metric("Pass Accuracy %", f"{pct_value:.1f}%")
+                except:
+                    st.metric("Pass Accuracy %", str(pass_pct))
+            else:
+                try:
+                    st.metric("Pass Accuracy %", f"{float(pass_pct):.1f}%")
+                except:
+                    st.metric("Pass Accuracy %", "0.0%")
+
+        with col5:
+            # Cross interceptions - using available metric
+            interceptions = player_data.get('Tentativas bem-sucedidas de interceptação de cruzamento e passe', 0)
+            inter_per90 = (interceptions * 90 / minutes) if minutes > 0 else 0
+            st.metric("Cross Interceptions /90", f"{inter_per90:.2f}")
+
+    elif position in ['DCE', 'DCD']:
+        # Centre-Back metrics
+        col1, col2, col3, col4, col5 = st.columns(5)
+
+        with col1:
+            tackles = player_data.get('Desarmes', 0)
+            tackles_per90 = (tackles * 90 / minutes) if minutes > 0 else 0
+            st.metric("Tackles /90", f"{tackles_per90:.2f}")
+
+        with col2:
+            interceptions = player_data.get('Tentativas bem-sucedidas de interceptação de cruzamento e passe', 0)
+            inter_per90 = (interceptions * 90 / minutes) if minutes > 0 else 0
+            st.metric("Interceptions /90", f"{inter_per90:.2f}")
+
+        with col3:
+            aerial_duels = player_data.get('Disputas aéreas', 0)
+            aerial_per90 = (aerial_duels * 90 / minutes) if minutes > 0 else 0
+            st.metric("Aerial Duels /90", f"{aerial_per90:.2f}")
+
+        with col4:
+            accurate_passes = player_data.get('Passes precisos', 0)
+            passes_per90 = (accurate_passes * 90 / minutes) if minutes > 0 else 0
+            st.metric("Accurate Passes /90", f"{passes_per90:.2f}")
+
+        with col5:
+            prog_passes = player_data.get('Passes progressivos', 0)
+            prog_per90 = (prog_passes * 90 / minutes) if minutes > 0 else 0
+            st.metric("Progressive Passes /90", f"{prog_per90:.2f}")
+
+    elif position in ['DE', 'DD']:
+        # Full-Back metrics
+        col1, col2, col3, col4, col5 = st.columns(5)
+
+        with col1:
+            tackles = player_data.get('Desarmes', 0)
+            tackles_per90 = (tackles * 90 / minutes) if minutes > 0 else 0
+            st.metric("Tackles /90", f"{tackles_per90:.2f}")
+
+        with col2:
+            interceptions = player_data.get('Tentativas bem-sucedidas de interceptação de cruzamento e passe', 0)
+            inter_per90 = (interceptions * 90 / minutes) if minutes > 0 else 0
+            st.metric("Interceptions /90", f"{inter_per90:.2f}")
+
+        with col3:
+            accurate_crosses = player_data.get('Cruzamentos precisos', 0)
+            crosses_per90 = (accurate_crosses * 90 / minutes) if minutes > 0 else 0
+            st.metric("Accurate Crosses /90", f"{crosses_per90:.2f}")
+
+        with col4:
+            successful_dribbles = player_data.get('Dribles bem-sucedidos', 0)
+            dribbles_per90 = (successful_dribbles * 90 / minutes) if minutes > 0 else 0
+            st.metric("Successful Dribbles /90", f"{dribbles_per90:.2f}")
+
+        with col5:
+            # Passes to penalty area - using available metric
+            key_passes = player_data.get('Passes chave', 0)
+            key_per90 = (key_passes * 90 / minutes) if minutes > 0 else 0
+            st.metric("Key Passes /90", f"{key_per90:.2f}")
+
+    elif position == 'MCD':
+        # Defensive Midfielder metrics
+        col1, col2, col3, col4, col5 = st.columns(5)
+
+        with col1:
+            recoveries = player_data.get('Bolas recuperadas', 0)
+            rec_per90 = (recoveries * 90 / minutes) if minutes > 0 else 0
+            st.metric("Ball Recoveries /90", f"{rec_per90:.2f}")
+
+        with col2:
+            tackles = player_data.get('Desarmes', 0)
+            tackles_per90 = (tackles * 90 / minutes) if minutes > 0 else 0
+            st.metric("Tackles /90", f"{tackles_per90:.2f}")
+
+        with col3:
+            interceptions = player_data.get('Tentativas bem-sucedidas de interceptação de cruzamento e passe', 0)
+            inter_per90 = (interceptions * 90 / minutes) if minutes > 0 else 0
+            st.metric("Interceptions /90", f"{inter_per90:.2f}")
+
+        with col4:
+            def_duels = player_data.get('Disputas na defesa', 0)
+            def_duels_won = player_data.get('Disputas na defesa ganhas', 0)
+            if def_duels > 0:
+                def_win_pct = (def_duels_won / def_duels) * 100
+                st.metric("Defensive Duels Won %", f"{def_win_pct:.1f}%")
+            else:
+                st.metric("Defensive Duels Won %", "0.0%")
+
+        with col5:
+            prog_passes = player_data.get('Passes progressivos', 0)
+            prog_per90 = (prog_passes * 90 / minutes) if minutes > 0 else 0
+            st.metric("Progressive Passes /90", f"{prog_per90:.2f}")
+
+    elif position == 'MC':
+        # Central Midfielder metrics
+        col1, col2, col3, col4, col5 = st.columns(5)
+
+        with col1:
+            successful_passes = player_data.get('Passes precisos', 0)
+            passes_per90 = (successful_passes * 90 / minutes) if minutes > 0 else 0
+            st.metric("Successful Passes /90", f"{passes_per90:.2f}")
+
+        with col2:
+            successful_dribbles = player_data.get('Dribles bem-sucedidos', 0)
+            dribbles_per90 = (successful_dribbles * 90 / minutes) if minutes > 0 else 0
+            st.metric("Successful Dribbles /90", f"{dribbles_per90:.2f}")
+
+        with col3:
+            shots_on_target = player_data.get('Chutes no gol', 0)
+            shots_per90 = (shots_on_target * 90 / minutes) if minutes > 0 else 0
+            st.metric("Shots on Target /90", f"{shots_per90:.2f}")
+
+        with col4:
+            key_passes = player_data.get('Passes chave', 0)
+            key_per90 = (key_passes * 90 / minutes) if minutes > 0 else 0
+            st.metric("Key Passes /90", f"{key_per90:.2f}")
+
+        with col5:
+            xa = player_data.get('xA', 0)
+            xa_per90 = (xa * 90 / minutes) if minutes > 0 else 0
+            st.metric("Expected Assists /90", f"{xa_per90:.2f}")
+
+    elif position in ['EE', 'ED']:
+        # Winger metrics
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
+
+        with col1:
+            successful_dribbles = player_data.get('Dribles bem-sucedidos', 0)
+            dribbles_per90 = (successful_dribbles * 90 / minutes) if minutes > 0 else 0
+            st.metric("Successful Dribbles /90", f"{dribbles_per90:.2f}")
+
+        with col2:
+            accurate_crosses = player_data.get('Cruzamentos precisos', 0)
+            crosses_per90 = (accurate_crosses * 90 / minutes) if minutes > 0 else 0
+            st.metric("Accurate Crosses /90", f"{crosses_per90:.2f}")
+
+        with col3:
+            # Final third actions - using available metric
+            final_third = player_data.get('Ações no terço final', 0)
+            final_per90 = (final_third * 90 / minutes) if minutes > 0 else 0
+            st.metric("Final Third Actions /90", f"{final_per90:.2f}")
+
+        with col4:
+            shots_on_target = player_data.get('Chutes no gol', 0)
+            shots_per90 = (shots_on_target * 90 / minutes) if minutes > 0 else 0
+            st.metric("Shots on Target /90", f"{shots_per90:.2f}")
+
+        with col5:
+            xa = player_data.get('xA', 0)
+            xa_per90 = (xa * 90 / minutes) if minutes > 0 else 0
+            st.metric("Expected Assists /90", f"{xa_per90:.2f}")
+
+        with col6:
+            xg = player_data.get('xG', 0)
+            xg_per90 = (xg * 90 / minutes) if minutes > 0 else 0
+            st.metric("Expected Goals /90", f"{xg_per90:.2f}")
 
     elif position == 'PL':
         # Forward metrics
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
+
         with col1:
-            key_passes = int(player_data.get('Passes chave', 0))
-            st.metric("Key Passes", key_passes)
+            goals = player_data.get('Gols', 0)
+            goals_per90 = (goals * 90 / minutes) if minutes > 0 else 0
+            st.metric("Goals /90", f"{goals_per90:.2f}")
+
         with col2:
-            scoring_attacks = int(player_data.get('Participação em ataques de pontuação', 0))
-            st.metric("Scoring Attacks", scoring_attacks)
+            xg = player_data.get('xG', 0)
+            xg_per90 = (xg * 90 / minutes) if minutes > 0 else 0
+            st.metric("Expected Goals /90", f"{xg_per90:.2f}")
+
         with col3:
-            successful_actions = player_data.get('Ações / com sucesso', 0)
-            # Handle potential string values
-            try:
-                if pd.notna(successful_actions):
-                    st.metric("Successful Actions", int(float(successful_actions)))
-                else:
-                    st.metric("Successful Actions", 0)
-            except:
-                st.metric("Successful Actions", str(successful_actions))
+            shots_on_target = player_data.get('Chutes no gol', 0)
+            shots_per90 = (shots_on_target * 90 / minutes) if minutes > 0 else 0
+            st.metric("Shots on Target /90", f"{shots_per90:.2f}")
+
         with col4:
-            fouls = int(player_data.get('Faltas', 0))
-            st.metric("Fouls", fouls)
+            successful_dribbles = player_data.get('Dribles bem-sucedidos', 0)
+            dribbles_per90 = (successful_dribbles * 90 / minutes) if minutes > 0 else 0
+            st.metric("Successful Dribbles /90", f"{dribbles_per90:.2f}")
+
+        with col5:
+            penalty_area_touches = player_data.get('Toques na área', 0)
+            touches_per90 = (penalty_area_touches * 90 / minutes) if minutes > 0 else 0
+            st.metric("Penalty Area Touches /90", f"{touches_per90:.2f}")
 
 
 def show_player_statistics(player_data: pd.Series, position: str):
@@ -649,26 +799,6 @@ def get_radar_metrics_for_position_actual(position: str, available_columns: List
                     found_metrics.append(col)
 
     return found_metrics[:5]  # Return max 5 metrics
-
-
-def get_radar_metrics_for_position(position: str) -> List[str]:
-    """Get metrics for radar chart by position - DEPRECATED, kept for compatibility"""
-
-    # Basic fallback metrics
-    radar_metrics = {
-        'GR': ['Gols sofridos', 'Passes', 'Defesas', 'Partidas jogadas', 'Minutos jogados'],
-        'DCE': ['Passes', 'Passes precisos', 'Defesas', 'Faltas', 'Cartões amarelos'],
-        'DCD': ['Passes', 'Passes precisos', 'Defesas', 'Faltas', 'Cartões amarelos'],
-        'DE': ['Passes', 'Passes chave', 'Faltas', 'Defesas', 'Cartões amarelos'],
-        'DD': ['Passes', 'Passes chave', 'Faltas', 'Defesas', 'Cartões amarelos'],
-        'EE': ['Passes chave', 'Passes', 'Faltas', 'Defesas', 'Cartões amarelos'],
-        'ED': ['Passes chave', 'Passes', 'Faltas', 'Defesas', 'Cartões amarelos'],
-        'MCD': ['Passes', 'Passes chave', 'Faltas', 'Defesas', 'Cartões amarelos'],
-        'MC': ['Passes', 'Passes chave', 'Faltas', 'Defesas', 'Cartões amarelos'],
-        'PL': ['Passes chave', 'Passes', 'Faltas', 'Defesas', 'Cartões amarelos']
-    }
-
-    return radar_metrics.get(position, ['Passes', 'Faltas', 'Defesas', 'Cartões amarelos', 'Partidas jogadas'])
 
 
 def get_max_values_for_position(position: str) -> Dict[str, float]:
