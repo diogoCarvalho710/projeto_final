@@ -1,0 +1,60 @@
+{
+  "DCD_defensive_impact": {
+    "name": "Defensive Impact",
+    "description": "Overall defensive contribution combining tackles, interceptions and aerial duels",
+    "category": "Defensive",
+    "components": [
+      {
+        "metric": "Desarmes",
+        "weight": 35,
+        "direction": "positive"
+      },
+      {
+        "metric": "Interceptações",
+        "weight": 35,
+        "direction": "positive"
+      },
+      {
+        "metric": "Disputas aéreas",
+        "weight": 20,
+        "direction": "positive"
+      },
+      {
+        "metric": "Faltas",
+        "weight": 10,
+        "direction": "negative"
+      }
+    ],
+    "position": "DCD",
+    "created_date": "2025-08-31 00:46:34"
+  },
+  "MCD_test_defensive_impact": {
+    "name": "Test Defensive Impact",
+    "description": "",
+    "category": "Defensive",
+    "position": "MCD",
+    "components": [
+      {
+        "metric": "Desarmes",
+        "weight": 40,
+        "direction": "positive"
+      },
+      {
+        "metric": "Interceptações",
+        "weight": 30,
+        "direction": "positive"
+      },
+      {
+        "metric": "Bolas recuperadas",
+        "weight": 20,
+        "direction": "positive"
+      },
+      {
+        "metric": "Faltas",
+        "weight": 10,
+        "direction": "negative"
+      }
+    ],
+    "created_date": "2025-08-31 00:48:24"
+  }
+}

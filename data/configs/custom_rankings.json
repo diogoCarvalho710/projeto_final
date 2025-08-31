@@ -1,0 +1,43 @@
+{
+  "DCD_goal_machine_ranking": {
+    "name": "Goal Machine Ranking",
+    "description": "",
+    "category": "Specialized",
+    "position": "DCD",
+    "metrics": [
+      {
+        "metric": "Gols",
+        "weight": 35,
+        "direction": "positive",
+        "min_threshold": null,
+        "importance": "medium"
+      },
+      {
+        "metric": "Xg",
+        "weight": 30,
+        "direction": "positive",
+        "min_threshold": null,
+        "importance": "medium"
+      },
+      {
+        "metric": "Chutes",
+        "weight": 25,
+        "direction": "positive",
+        "min_threshold": null,
+        "importance": "medium"
+      },
+      {
+        "metric": "Dribles",
+        "weight": 10,
+        "direction": "positive",
+        "min_threshold": null,
+        "importance": "medium"
+      }
+    ],
+    "min_minutes_filter": 500,
+    "age_weight_curve": "None",
+    "exclude_own_team": true,
+    "market_value_consideration": "None",
+    "created_date": "2025-08-31 01:04:10"
+  }
+}

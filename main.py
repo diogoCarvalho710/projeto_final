@@ -411,24 +411,310 @@ def show_rankings_page():
 
 
 def show_settings_page():
-    """Show settings page (placeholder)"""
-    st.title("⚙️ Settings & Personalization")
-    st.info("🚧 Phase 5: Advanced personalization features coming next!")
+    """Show complete Phase 5 settings page"""
+    try:
+        from pages.settings import show_settings
+        show_settings()
+    except Exception as e:
+        st.error(f"Settings page error: {str(e)}")
 
+        # Fallback to debug version
+        st.warning("🔧 Falling back to debug mode...")
+        try:
+            from pages.settings_debug import show_settings as show_settings_debug
+            show_settings_debug()
+        except Exception as debug_error:
+            st.error(f"Even debug failed: {str(debug_error)}")
+
+        # Show detailed error for debugging
+        with st.expander("🔍 Error Details"):
+            import traceback
+            st.code(traceback.format_exc())
+
+
+def show_rankings_page():
+    """Show enhanced rankings page with Phase 5 features"""
+    st.title("📊 Advanced Rankings System")
+
+    if not st.session_state.get('data_processor') or not st.session_state.get('selected_team'):
+        st.warning("⚠️ Please upload data and select a team first!")
+        return
+
+    # Initialize Phase 5 managers if needed
+    try:
+        if 'custom_rankings_manager' not in st.session_state:
+            from src.custom_rankings_manager import CustomRankingsManager
+            st.session_state.custom_rankings_manager = CustomRankingsManager(
+                st.session_state.data_processor,
+                st.session_state.ranking_system
+            )
+
+        custom_rankings_manager = st.session_state.custom_rankings_manager
+        custom_rankings = custom_rankings_manager.load_custom_rankings()
+
+        if custom_rankings:
+            st.success(f"✅ {len(custom_rankings)} custom rankings available!")
+
+            # Show custom rankings
+            for ranking_id, ranking_config in custom_rankings.items():
+                with st.expander(f"🏆 {ranking_config['name']} ({ranking_config['position']})", expanded=False):
+                    st.markdown(f"**Description:** {ranking_config.get('description', 'No description')}")
+
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button(f"▶️ Run Ranking", key=f"run_{ranking_id}"):
+                            # Calculate and display ranking
+                            position = ranking_config['position']
+                            if position in st.session_state.data_processor.dataframes:
+                                df = st.session_state.data_processor.dataframes[position]
+                                ranked_df = custom_rankings_manager.calculate_custom_ranking(df, ranking_config)
+
+                                if not ranked_df.empty:
+                                    st.subheader(f"🏆 {ranking_config['name']} Results")
+
+                                    # Show top 20
+                                    display_df = ranked_df.head(20)[
+                                        ['Jogador', 'Time', 'Idade', 'Minutos jogados', 'Custom_Ranking_Score']].copy()
+                                    display_df.insert(0, 'Rank', range(1, len(display_df) + 1))
+                                    display_df.columns = ['Rank', 'Player', 'Team', 'Age', 'Minutes', 'Score']
+
+                                    st.dataframe(display_df, use_container_width=True)
+
+                                    # Export option
+                                    csv_data = display_df.to_csv(index=False)
+                                    st.download_button(
+                                        "📥 Export Results",
+                                        csv_data,
+                                        f"{ranking_config['name']}_results.csv",
+                                        "text/csv"
+                                    )
+
+                    with col2:
+                        st.metric("Metrics Used", len(ranking_config.get('metrics', [])))
+        else:
+            st.info("🚧 No custom rankings yet. Create them in the Settings page!")
+
+    except Exception as e:
+        st.error(f"Custom rankings error: {str(e)}")
+
+    # Show standard rankings (Phase 4)
+    st.markdown("---")
+    st.markdown("### 📊 Standard Position Rankings")
+    st.info("These are available in the Scouting page. Create custom rankings in Settings for more advanced features!")
+
+    # Quick access to scouting
+    if st.button("🔍 Go to Advanced Scouting"):
+        st.session_state.current_page = 'scouting'
+        st.rerun()
+
+
+# Update the main function to ensure Phase 5 compatibility
+def main():
+    st.set_page_config(**PAGE_CONFIG)
+    initialize_session_state()
+
+    st.sidebar.title("⚽ Football Analytics")
+
+    # Show enhanced status if data is loaded
+    if st.session_state.data_processor:
+        st.sidebar.success("📊 Data loaded from previous session")
+
+        # Show comparison status
+        comparison_count = len(st.session_state.get('comparison_players', []))
+        if comparison_count > 0:
+            st.sidebar.info(f"⚖️ {comparison_count}/5 players in comparison")
+
+        # Show Phase 5 status
+        phase5_status = []
+
+        # Check custom metrics
+        try:
+            from src.custom_metrics_manager import CustomMetricsManager
+            if 'custom_metrics_manager' not in st.session_state:
+                st.session_state.custom_metrics_manager = CustomMetricsManager(st.session_state.data_processor)
+            custom_metrics = st.session_state.custom_metrics_manager.load_custom_metrics()
+            if custom_metrics:
+                phase5_status.append(f"🎨 {len(custom_metrics)} custom metrics")
+        except:
+            pass
+
+        # Check favorites
+        try:
+            from src.favorites_manager import FavoritesManager
+            if 'favorites_manager' not in st.session_state:
+                st.session_state.favorites_manager = FavoritesManager(st.session_state.data_processor)
+            favorites_count = st.session_state.favorites_manager.get_favorites_count()
+            if favorites_count > 0:
+                phase5_status.append(f"⭐ {favorites_count} favorites")
+        except:
+            pass
+
+        # Check custom rankings
+        try:
+            from src.custom_rankings_manager import CustomRankingsManager
+            if 'custom_rankings_manager' not in st.session_state:
+                st.session_state.custom_rankings_manager = CustomRankingsManager(
+                    st.session_state.data_processor,
+                    st.session_state.ranking_system
+                )
+            custom_rankings = st.session_state.custom_rankings_manager.load_custom_rankings()
+            if custom_rankings:
+                phase5_status.append(f"🏆 {len(custom_rankings)} custom rankings")
+        except:
+            pass
+
+        if phase5_status:
+            st.sidebar.success("🚀 Phase 5 Active: " + " | ".join(phase5_status))
+
+        # Show deduplication info
+        duplicate_analysis = st.session_state.data_processor.get_duplicate_analysis()
+        if duplicate_analysis['potential_duplicates'] > 0:
+            st.sidebar.warning(f"🔍 Found {duplicate_analysis['potential_duplicates']} potential duplicate(s)")
+
+        # Debug button for duplicates
+        if st.sidebar.button("🔍 View Duplicate Analysis"):
+            st.session_state.show_duplicate_analysis = True
+
+        # Clear data option
+        if st.sidebar.button("🗑️ Clear Saved Data"):
+            clear_saved_data()
+            st.rerun()
+
+    # File upload (same as before)
+    uploaded_files = st.sidebar.file_uploader(
+        "Upload Wyscout CSVs",
+        type="csv",
+        accept_multiple_files=True,
+        help="Select all CSV files by position"
+    )
+
+    # Process uploaded files (same as before)
+    if uploaded_files:
+        if st.session_state.data_processor is None:
+            with st.spinner("Processing data..."):
+                try:
+                    st.session_state.data_processor = DataProcessor(uploaded_files)
+                    save_data_processor(st.session_state.data_processor)
+                    st.sidebar.success(f"✅ {len(uploaded_files)} files loaded & saved")
+
+                    # Clear systems to force recreation with new data
+                    for key in ['ranking_system', 'comparison_manager', 'comparison_players',
+                                'custom_metrics_manager', 'favorites_manager', 'custom_rankings_manager']:
+                        if key in st.session_state:
+                            del st.session_state[key]
+
+                except Exception as e:
+                    st.sidebar.error(f"❌ Error: {str(e)}")
+                    return
+
+    # Team selection and navigation (same as before, but updated page options)
+    if st.session_state.data_processor:
+        teams = st.session_state.data_processor.get_teams()
+        selected_team = st.sidebar.selectbox(
+            "Select Team",
+            teams,
+            index=teams.index(st.session_state.selected_team) if st.session_state.selected_team in teams else 0
+        )
+
+        if selected_team != st.session_state.selected_team:
+            st.session_state.selected_team = selected_team
+            save_session_config()
+
+        # Navigation menu
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 🧭 Navigation")
+
+        page_options = {
+            'dashboard': '🏠 Team Dashboard',
+            'player_profile': '👤 Player Profile',
+            'scouting': '🔍 Scouting & Comparison',
+            'rankings': '📊 Rankings & Custom Rankings',  # Updated
+            'settings': '⚙️ Settings & Personalization'  # Updated
+        }
+
+        # Handle player profile navigation
+        if st.session_state.show_player_profile and st.session_state.selected_player:
+            st.session_state.current_page = 'player_profile'
+            st.session_state.show_player_profile = False
+
+        current_page = st.sidebar.radio(
+            "Select Page",
+            list(page_options.keys()),
+            format_func=lambda x: page_options[x],
+            index=list(page_options.keys()).index(st.session_state.current_page)
+        )
+
+        if current_page != st.session_state.current_page:
+            st.session_state.current_page = current_page
+            save_session_config()
+
+        # Show selected page
+        if current_page == 'dashboard':
+            show_team_dashboard_page()
+        elif current_page == 'player_profile':
+            show_player_profile_page()
+        elif current_page == 'scouting':
+            show_scouting_page()
+        elif current_page == 'rankings':
+            show_rankings_page()  # Now enhanced!
+        elif current_page == 'settings':
+            show_settings_page()  # Now full Phase 5!
+
+    else:
+        # Enhanced welcome screen
+        show_enhanced_welcome_screen()
+
+    # Show duplicate analysis if requested
+    if st.session_state.get('show_duplicate_analysis') and st.session_state.data_processor:
+        show_duplicate_analysis()
+        st.session_state.show_duplicate_analysis = False
+
+
+def show_enhanced_welcome_screen():
+    """Enhanced welcome screen with Phase 5 info"""
+    st.title("⚽ Football Analytics Platform")
     st.markdown("""
-    **Coming in Phase 5:**
-    - 🎨 **Custom metrics creation** (combine existing metrics with weights)
-    - 📊 **Personalized radar charts** (choose your own metrics)
-    - 💾 **Configuration templates** (save/load your setups)
-    - ⭐ **Favorites system** (bookmark players and configurations)
-    - 🔧 **Advanced scouting preferences**
-    - 📥 **Export/Import settings** (JSON format)
+    ### 🚀 Welcome to your advanced football analytics platform!
 
-    **Phase 6:**
-    - 🎯 **ML-powered recommendations**
-    - 📈 **Performance prediction models**
-    - 🔍 **Smart player matching**
+    **To get started:**
+    1. 📤 Upload Wyscout CSV files in the sidebar
+    2. 🏆 Select your team
+    3. 📊 Explore the available features
+
+    **💾 Auto-Save Feature:**
+    - Your data is automatically saved after upload
+    - Team selection and comparisons are remembered
+    - Custom metrics, favorites, and rankings persist
+    - No need to re-upload after refresh!
     """)
+
+    # Phase overview with current status
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("""
+        **🔧 Available Features:**
+        - 🏠 **Team Dashboard**: Squad overview with starters/subs
+        - 👤 **Player Profiles**: Detailed individual analysis with radar charts
+        - 🔍 **Advanced Scouting**: Player search, rankings, and comparison system
+        - 📊 **Rankings**: Performance rankings by position + **Custom Rankings!** ✨
+        - ⚙️ **Settings**: Complete personalization system ✨
+        """)
+
+    with col2:
+        st.success("🎉 **PHASE 5 COMPLETE!**")
+        st.markdown("""
+        **✨ NEW Phase 5 Features:**
+        - 🎨 **Custom Metrics**: Create personalized performance indicators
+        - ⭐ **Advanced Favorites**: Comprehensive player tracking system  
+        - 🏆 **Custom Rankings**: Sophisticated ranking systems
+        - 📊 **Personalized Radar Charts**: Your own metric combinations
+        - 💾 **Export/Import**: Complete configuration management
+        """)
+
+    st.markdown("---")
+    st.info(
+        "🚀 **Ready for Phase 6**: ML-powered recommendations, performance prediction, and advanced similarity analysis coming next!")
 
 
 if __name__ == "__main__":
