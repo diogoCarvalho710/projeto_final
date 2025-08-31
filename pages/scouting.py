@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
 from typing import List, Dict
-from ..src.ranking_system import RankingSystem
-from ..components.filters import ScoutingFilters, FilterValidator
-from ..components.charts import ScoutingCharts
+from src.ranking_system import RankingSystem
+from components.filters import ScoutingFilters, FilterValidator
+from components.charts import ScoutingCharts
 
 
 def show_scouting():

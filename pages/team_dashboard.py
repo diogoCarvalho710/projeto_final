@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from ..src.team_manager import TeamManager
+from src.team_manager import TeamManager
 
 
 def show_team_dashboard():
