@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
 from typing import Dict, List
-from src.custom_metrics_manager import CustomMetricsManager
-from src.favorites_manager import FavoritesManager
-from src.custom_rankings_manager import CustomRankingsManager
+from ..src.custom_metrics_manager import CustomMetricsManager
+from ..src.favorites_manager import FavoritesManager
+from ..src.custom_rankings_manager import CustomRankingsManager
 
 
 def show_settings():

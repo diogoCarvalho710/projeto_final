@@ -1,0 +1,25 @@
+{
+  "DCD_defense": {
+    "name": "Defense",
+    "description": "",
+    "position": "DCD",
+    "components": [
+      {
+        "metric": "Faltas_per90",
+        "weight": 10,
+        "direction": "negative"
+      },
+      {
+        "metric": "Bolas recuperadas_per90",
+        "weight": 40,
+        "direction": "positive"
+      },
+      {
+        "metric": "Desarmes_per90",
+        "weight": 50,
+        "direction": "positive"
+      }
+    ],
+    "created_at": "2025-08-31T11:58:29.696412"
+  }
+}
