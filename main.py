@@ -167,6 +167,10 @@ def main():
             st.session_state.current_page = 'player_profile'
             st.session_state.show_player_profile = False
 
+        # Ensure current_page is valid
+        if st.session_state.current_page not in page_options:
+            st.session_state.current_page = 'dashboard'
+
         current_page = st.sidebar.radio(
             "Select Page",
             list(page_options.keys()),

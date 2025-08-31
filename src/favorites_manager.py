@@ -1,141 +1,35 @@
 import streamlit as st
 import pandas as pd
 import json
-from typing import Dict, List, Optional, Tuple
 from pathlib import Path
+from typing import Dict, List, Any, Optional
 from datetime import datetime
 
 
 class FavoritesManager:
-    """Manages favorite players, configurations, and custom collections"""
+    """Manager for handling favorite players"""
 
     def __init__(self, data_processor):
         self.data_processor = data_processor
-        self.config_dir = Path("data/configs")
-        self.config_dir.mkdir(parents=True, exist_ok=True)
-        self.favorites_file = self.config_dir / "favorites.json"
-        self.collections_file = self.config_dir / "collections.json"
+        self.favorites_file = Path("data/temp/favorites.json")
+        self.ensure_data_dir()
 
-    def add_to_favorites(self, player_name: str, position: str, reason: str = "",
-                         tags: List[str] = None, collection: str = "Default") -> bool:
-        """Add a player to favorites with enhanced metadata"""
-
-        if tags is None:
-            tags = []
-
-        # Get player data
-        if position not in self.data_processor.dataframes:
-            st.error(f"Position {position} not found")
-            return False
-
-        position_df = self.data_processor.dataframes[position]
-        player_data = position_df[position_df['Jogador'] == player_name]
-
-        if player_data.empty:
-            st.error(f"Player {player_name} not found in {position}")
-            return False
-
-        # Extract detailed player info
-        player_info = player_data.iloc[0]
-
-        # Create comprehensive favorite entry
-        favorite_entry = {
-            'name': player_name,
-            'position': position,
-            'team': player_info.get('Time', 'Unknown'),
-            'age': int(player_info.get('Idade', 0)),
-            'nationality': player_info.get('Nacionalidade', 'Unknown'),
-            'height': player_info.get('Altura', 'Unknown'),
-            'foot': player_info.get('Pé', 'Unknown'),
-            'minutes': int(player_info.get('Minutos jogados', 0)),
-            'matches': int(player_info.get('Partidas jogadas', 0)),
-            'goals': int(player_info.get('Gols', 0)),
-            'assists': int(player_info.get('Assistências', 0)),
-            'market_value': player_info.get('Valor de mercado', 'Unknown'),
-            'contract_expires': player_info.get('Contrato expira em', 'Unknown'),
-            'birth_date': player_info.get('Data de nascimento', 'Unknown'),
-            'reason': reason,
-            'tags': tags,
-            'collection': collection,
-            'added_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'notes': '',
-            'rating': 0,  # User rating 1-5
-            'priority': 'medium',  # low, medium, high, urgent
-            'status': 'scouting'  # scouting, contacted, negotiating, signed, rejected
-        }
-
-        # Load existing favorites
-        favorites = self.load_favorites()
-
-        # Check if already in favorites
-        favorite_id = f"{player_name}_{position}_{player_info.get('Time', 'Unknown')}"
-        if favorite_id in favorites:
-            st.warning(f"{player_name} is already in your favorites!")
-            return False
-
-        # Add to favorites
-        favorites[favorite_id] = favorite_entry
-
-        # Save favorites
-        if self.save_favorites(favorites):
-            st.success(f"Added {player_name} to favorites!")
-            return True
-        else:
-            st.error("Failed to add to favorites")
-            return False
-
-    def remove_from_favorites(self, favorite_id: str) -> bool:
-        """Remove a player from favorites"""
-
-        favorites = self.load_favorites()
-
-        if favorite_id in favorites:
-            player_name = favorites[favorite_id]['name']
-            del favorites[favorite_id]
-
-            if self.save_favorites(favorites):
-                st.success(f"Removed {player_name} from favorites")
-                return True
-            else:
-                st.error("Failed to remove from favorites")
-                return False
-        else:
-            st.warning("Player not found in favorites")
-            return False
-
-    def update_favorite(self, favorite_id: str, updates: Dict) -> bool:
-        """Update favorite player information"""
-
-        favorites = self.load_favorites()
-
-        if favorite_id not in favorites:
-            return False
-
-        # Update fields
-        for key, value in updates.items():
-            favorites[favorite_id][key] = value
-
-        favorites[favorite_id]['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-        return self.save_favorites(favorites)
+    def ensure_data_dir(self):
+        """Ensure data directory exists"""
+        self.favorites_file.parent.mkdir(parents=True, exist_ok=True)
 
     def load_favorites(self) -> Dict:
-        """Load favorites from JSON file"""
+        """Load favorites from file"""
+        if self.favorites_file.exists():
+            try:
+                with open(self.favorites_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception as e:
+                st.error(f"Error loading favorites: {str(e)}")
+        return {}
 
-        if not self.favorites_file.exists():
-            return {}
-
-        try:
-            with open(self.favorites_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            st.error(f"Error loading favorites: {str(e)}")
-            return {}
-
-    def save_favorites(self, favorites: Dict) -> bool:
-        """Save favorites to JSON file"""
-
+    def save_favorites(self, favorites: Dict):
+        """Save favorites to file"""
         try:
             with open(self.favorites_file, 'w', encoding='utf-8') as f:
                 json.dump(favorites, f, ensure_ascii=False, indent=2)
@@ -144,790 +38,421 @@ class FavoritesManager:
             st.error(f"Error saving favorites: {str(e)}")
             return False
 
+    def add_to_favorites(self, player_name: str, position: str, reason: str = "",
+                         collection: str = "General", priority: str = "Medium") -> bool:
+        """Add player to favorites"""
+        try:
+            favorites = self.load_favorites()
+
+            # Create unique ID
+            fav_id = f"{player_name}_{position}".replace(" ", "_")
+
+            # Check if already exists
+            if fav_id in favorites:
+                return False
+
+            # Get player data
+            player_data = self.data_processor.get_player_data(player_name, position)
+            if player_data is None:
+                return False
+
+            # Create favorite entry
+            favorite_entry = {
+                'player_name': player_name,
+                'position': position,
+                'team': player_data.get('Time', 'Unknown'),
+                'age': player_data.get('Idade', 'Unknown'),
+                'nationality': player_data.get('Nacionalidade', 'Unknown'),
+                'reason': reason,
+                'collection': collection,
+                'priority': priority,
+                'status': 'Scouting',
+                'added_date': datetime.now().isoformat(),
+                'notes': []
+            }
+
+            favorites[fav_id] = favorite_entry
+            return self.save_favorites(favorites)
+
+        except Exception as e:
+            st.error(f"Error adding to favorites: {str(e)}")
+            return False
+
+    def remove_from_favorites(self, fav_id: str) -> bool:
+        """Remove player from favorites"""
+        try:
+            favorites = self.load_favorites()
+            if fav_id in favorites:
+                del favorites[fav_id]
+                return self.save_favorites(favorites)
+            return False
+        except Exception as e:
+            st.error(f"Error removing from favorites: {str(e)}")
+            return False
+
+    def update_favorite(self, fav_id: str, updates: Dict) -> bool:
+        """Update favorite player information"""
+        try:
+            favorites = self.load_favorites()
+            if fav_id in favorites:
+                favorites[fav_id].update(updates)
+                return self.save_favorites(favorites)
+            return False
+        except Exception as e:
+            st.error(f"Error updating favorite: {str(e)}")
+            return False
+
     def get_favorites_count(self) -> int:
-        """Get total number of favorite players"""
-        return len(self.load_favorites())
-
-    def get_favorites_by_position(self, position: str) -> List[Dict]:
-        """Get favorite players for a specific position"""
-
+        """Get total number of favorites"""
         favorites = self.load_favorites()
-        position_favorites = []
-
-        for favorite_id, favorite_data in favorites.items():
-            if favorite_data.get('position') == position:
-                favorite_data['id'] = favorite_id
-                position_favorites.append(favorite_data)
-
-        # Sort by priority then by added date
-        priority_order = {'urgent': 4, 'high': 3, 'medium': 2, 'low': 1}
-        position_favorites.sort(
-            key=lambda x: (priority_order.get(x.get('priority', 'medium'), 2),
-                           x.get('added_date', '')),
-            reverse=True
-        )
-
-        return position_favorites
-
-    def get_favorites_by_collection(self, collection: str) -> List[Dict]:
-        """Get favorites by collection"""
-
-        favorites = self.load_favorites()
-        collection_favorites = []
-
-        for favorite_id, favorite_data in favorites.items():
-            if favorite_data.get('collection', 'Default') == collection:
-                favorite_data['id'] = favorite_id
-                collection_favorites.append(favorite_data)
-
-        return collection_favorites
-
-    def get_favorites_by_tag(self, tag: str) -> List[Dict]:
-        """Get favorite players with a specific tag"""
-
-        favorites = self.load_favorites()
-        tagged_favorites = []
-
-        for favorite_id, favorite_data in favorites.items():
-            if tag in favorite_data.get('tags', []):
-                favorite_data['id'] = favorite_id
-                tagged_favorites.append(favorite_data)
-
-        return tagged_favorites
-
-    def get_all_tags(self) -> List[str]:
-        """Get all tags used in favorites"""
-
-        favorites = self.load_favorites()
-        all_tags = set()
-
-        for favorite_data in favorites.values():
-            all_tags.update(favorite_data.get('tags', []))
-
-        return sorted(list(all_tags))
-
-    def get_all_collections(self) -> List[str]:
-        """Get all collections"""
-
-        favorites = self.load_favorites()
-        collections = set()
-
-        for favorite_data in favorites.values():
-            collections.add(favorite_data.get('collection', 'Default'))
-
-        return sorted(list(collections))
-
-    def is_favorite(self, player_name: str, position: str, team: str = None) -> bool:
-        """Check if a player is in favorites"""
-
-        favorites = self.load_favorites()
-
-        for favorite_data in favorites.values():
-            if (favorite_data['name'] == player_name and
-                    favorite_data['position'] == position):
-                if team is None or favorite_data.get('team') == team:
-                    return True
-
-        return False
+        return len(favorites)
 
     def show_favorites_ui_updated(self):
-        """Show comprehensive favorites management UI (without suggestions tab)"""
-
-        st.subheader("⭐ Favorite Players Management")
+        """Show favorites UI (without suggestions tab)"""
+        st.subheader("⭐ Favorite Players")
 
         favorites = self.load_favorites()
 
         if not favorites:
-            st.info("No favorite players yet. Add players to favorites from player profiles!")
-            self._show_favorites_help()
+            st.info("📭 No favorite players yet. Add players from their profile pages!")
             return
 
-        # Summary dashboard
-        self._show_favorites_dashboard(favorites)
-
-        st.markdown("---")
-
-        # Main tabs (removed suggestions tab as requested)
-        tab1, tab2, tab3 = st.tabs(["Browse Favorites", "Collections", "Bulk Actions"])
-
-        with tab1:
-            self._show_browse_favorites(favorites)
-
-        with tab2:
-            self._show_collections_management()
-
-        with tab3:
-            self._show_bulk_actions(favorites)
-
-    def _show_favorites_dashboard(self, favorites: Dict):
-        """Show favorites summary dashboard"""
-
-        # Calculate statistics
-        total_count = len(favorites)
-        positions = set(f.get('position', 'Unknown') for f in favorites.values())
-        teams = set(f.get('team', 'Unknown') for f in favorites.values())
-        collections = set(f.get('collection', 'Default') for f in favorites.values())
-        tags = self.get_all_tags()
-
-        # Priority distribution
-        priority_counts = {}
-        for fav in favorites.values():
-            priority = fav.get('priority', 'medium')
-            priority_counts[priority] = priority_counts.get(priority, 0) + 1
-
-        # Status distribution
-        status_counts = {}
-        for fav in favorites.values():
-            status = fav.get('status', 'scouting')
-            status_counts[status] = status_counts.get(status, 0) + 1
-
-        # Display dashboard
-        col1, col2, col3, col4, col5 = st.columns(5)
-
-        with col1:
-            st.metric("Total Favorites", total_count)
-        with col2:
-            st.metric("Positions", len(positions))
-        with col3:
-            st.metric("Teams", len(teams))
-        with col4:
-            st.metric("Collections", len(collections))
-        with col5:
-            st.metric("Tags", len(tags))
-
-        # Priority and status overview
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.markdown("**Priority Distribution:**")
-            for priority in ['urgent', 'high', 'medium', 'low']:
-                count = priority_counts.get(priority, 0)
-                if count > 0:
-                    icon = {"urgent": "🚨", "high": "🔥", "medium": "⚡", "low": "📝"}[priority]
-                    st.markdown(f"{icon} {priority.title()}: {count}")
-
-        with col2:
-            st.markdown("**Status Distribution:**")
-            for status in ['scouting', 'contacted', 'negotiating', 'signed', 'rejected']:
-                count = status_counts.get(status, 0)
-                if count > 0:
-                    icon = {"scouting": "🔍", "contacted": "📞", "negotiating": "💬",
-                            "signed": "✅", "rejected": "❌"}[status]
-                    st.markdown(f"{icon} {status.title()}: {count}")
-
-    def _show_browse_favorites(self, favorites: Dict):
-        """Show browsing interface for favorites"""
-
-        # Filters
+        # Filters and controls
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            positions = ['All'] + sorted(set(f.get('position', 'Unknown') for f in favorites.values()))
-            position_filter = st.selectbox("Position", positions, key="fav_position_filter")
+            collections = list(set([fav['collection'] for fav in favorites.values()]))
+            selected_collection = st.selectbox(
+                "Filter by Collection",
+                ["All"] + collections,
+                key="favorites_collection_filter"
+            )
 
         with col2:
-            collections = ['All'] + self.get_all_collections()
-            collection_filter = st.selectbox("Collection", collections, key="fav_collection_filter")
+            priorities = ["All", "High", "Medium", "Low"]
+            selected_priority = st.selectbox(
+                "Filter by Priority",
+                priorities,
+                key="favorites_priority_filter"
+            )
 
         with col3:
-            priorities = ['All', 'urgent', 'high', 'medium', 'low']
-            priority_filter = st.selectbox("Priority", priorities, key="fav_priority_filter")
+            statuses = list(set([fav['status'] for fav in favorites.values()]))
+            selected_status = st.selectbox(
+                "Filter by Status",
+                ["All"] + statuses,
+                key="favorites_status_filter"
+            )
 
         with col4:
-            statuses = ['All', 'scouting', 'contacted', 'negotiating', 'signed', 'rejected']
-            status_filter = st.selectbox("Status", statuses, key="fav_status_filter")
-
-        # Additional filters
-        col1, col2 = st.columns(2)
-        with col1:
-            tags = ['All'] + self.get_all_tags()
-            tag_filter = st.selectbox("Tag", tags, key="fav_tag_filter")
-
-        with col2:
-            sort_options = ['Added Date (Newest)', 'Added Date (Oldest)', 'Name A-Z', 'Name Z-A',
-                            'Age (Youngest)', 'Age (Oldest)', 'Priority', 'Rating']
-            sort_by = st.selectbox("Sort by", sort_options, key="fav_sort_by")
+            positions = list(set([fav['position'] for fav in favorites.values()]))
+            selected_position = st.selectbox(
+                "Filter by Position",
+                ["All"] + positions,
+                key="favorites_position_filter"
+            )
 
         # Apply filters
-        filtered_favorites = self._apply_favorite_filters(
-            favorites, position_filter, collection_filter, priority_filter,
-            status_filter, tag_filter, sort_by
+        filtered_favorites = self.apply_favorites_filters(
+            favorites, selected_collection, selected_priority,
+            selected_status, selected_position
         )
 
         if not filtered_favorites:
-            st.info("No favorites match the current filters")
+            st.warning("🚫 No favorites match the selected filters")
             return
 
-        st.markdown(f"**Showing {len(filtered_favorites)} favorites:**")
+        st.markdown(f"**Showing {len(filtered_favorites)} of {len(favorites)} favorite players**")
+
+        # Sort options
+        sort_by = st.selectbox(
+            "Sort by:",
+            ["Date Added (Newest)", "Date Added (Oldest)", "Player Name", "Priority", "Age"],
+            key="favorites_sort"
+        )
+
+        # Sort favorites
+        sorted_favorites = self.sort_favorites(filtered_favorites, sort_by)
 
         # Display favorites
-        for favorite_id, favorite_data in filtered_favorites.items():
-            self._show_favorite_card(favorite_id, favorite_data)
+        for fav_id, favorite in sorted_favorites.items():
+            self.show_favorite_card(fav_id, favorite)
 
-    def _apply_favorite_filters(self, favorites: Dict, position_filter: str, collection_filter: str,
-                                priority_filter: str, status_filter: str, tag_filter: str, sort_by: str) -> Dict:
+    def apply_favorites_filters(self, favorites: Dict, collection: str, priority: str,
+                                status: str, position: str) -> Dict:
         """Apply filters to favorites"""
+        filtered = {}
 
-        filtered = favorites.copy()
+        for fav_id, favorite in favorites.items():
+            # Collection filter
+            if collection != "All" and favorite['collection'] != collection:
+                continue
 
-        # Apply filters
-        if position_filter != 'All':
-            filtered = {k: v for k, v in filtered.items() if v.get('position') == position_filter}
+            # Priority filter
+            if priority != "All" and favorite['priority'] != priority:
+                continue
 
-        if collection_filter != 'All':
-            filtered = {k: v for k, v in filtered.items() if v.get('collection', 'Default') == collection_filter}
+            # Status filter
+            if status != "All" and favorite['status'] != status:
+                continue
 
-        if priority_filter != 'All':
-            filtered = {k: v for k, v in filtered.items() if v.get('priority', 'medium') == priority_filter}
+            # Position filter
+            if position != "All" and favorite['position'] != position:
+                continue
 
-        if status_filter != 'All':
-            filtered = {k: v for k, v in filtered.items() if v.get('status', 'scouting') == status_filter}
-
-        if tag_filter != 'All':
-            filtered = {k: v for k, v in filtered.items() if tag_filter in v.get('tags', [])}
-
-        # Apply sorting
-        if sort_by == 'Added Date (Newest)':
-            filtered = dict(sorted(filtered.items(), key=lambda x: x[1].get('added_date', ''), reverse=True))
-        elif sort_by == 'Added Date (Oldest)':
-            filtered = dict(sorted(filtered.items(), key=lambda x: x[1].get('added_date', '')))
-        elif sort_by == 'Name A-Z':
-            filtered = dict(sorted(filtered.items(), key=lambda x: x[1].get('name', '')))
-        elif sort_by == 'Name Z-A':
-            filtered = dict(sorted(filtered.items(), key=lambda x: x[1].get('name', ''), reverse=True))
-        elif sort_by == 'Age (Youngest)':
-            filtered = dict(sorted(filtered.items(), key=lambda x: x[1].get('age', 99)))
-        elif sort_by == 'Age (Oldest)':
-            filtered = dict(sorted(filtered.items(), key=lambda x: x[1].get('age', 0), reverse=True))
-        elif sort_by == 'Priority':
-            priority_order = {'urgent': 4, 'high': 3, 'medium': 2, 'low': 1}
-            filtered = dict(sorted(filtered.items(),
-                                   key=lambda x: priority_order.get(x[1].get('priority', 'medium'), 2),
-                                   reverse=True))
-        elif sort_by == 'Rating':
-            filtered = dict(sorted(filtered.items(), key=lambda x: x[1].get('rating', 0), reverse=True))
+            filtered[fav_id] = favorite
 
         return filtered
 
-    def _show_favorite_card(self, favorite_id: str, favorite_data: Dict):
-        """Show individual favorite player card with management options"""
+    def sort_favorites(self, favorites: Dict, sort_by: str) -> Dict:
+        """Sort favorites based on criteria"""
+        try:
+            if sort_by == "Date Added (Newest)":
+                sorted_items = sorted(
+                    favorites.items(),
+                    key=lambda x: x[1]['added_date'],
+                    reverse=True
+                )
+            elif sort_by == "Date Added (Oldest)":
+                sorted_items = sorted(
+                    favorites.items(),
+                    key=lambda x: x[1]['added_date']
+                )
+            elif sort_by == "Player Name":
+                sorted_items = sorted(
+                    favorites.items(),
+                    key=lambda x: x[1]['player_name']
+                )
+            elif sort_by == "Priority":
+                priority_order = {"High": 3, "Medium": 2, "Low": 1}
+                sorted_items = sorted(
+                    favorites.items(),
+                    key=lambda x: priority_order.get(x[1]['priority'], 0),
+                    reverse=True
+                )
+            elif sort_by == "Age":
+                sorted_items = sorted(
+                    favorites.items(),
+                    key=lambda x: x[1]['age'] if isinstance(x[1]['age'], (int, float)) else 0
+                )
+            else:
+                sorted_items = list(favorites.items())
 
+            return dict(sorted_items)
+
+        except Exception as e:
+            st.error(f"Error sorting favorites: {str(e)}")
+            return favorites
+
+    def show_favorite_card(self, fav_id: str, favorite: Dict):
+        """Show individual favorite player card"""
         with st.container():
-            # Card header
-            col1, col2 = st.columns([4, 1])
+            # Header
+            col1, col2, col3 = st.columns([3, 1, 1])
 
             with col1:
-                # Priority and status indicators
-                priority_icons = {'urgent': '🚨', 'high': '🔥', 'medium': '⚡', 'low': '📝'}
-                status_icons = {'scouting': '🔍', 'contacted': '📞', 'negotiating': '💬',
-                                'signed': '✅', 'rejected': '❌'}
+                priority_icon = {"High": "🔴", "Medium": "🟡", "Low": "🟢"}.get(favorite['priority'], "⚪")
+                status_icon = {"Scouting": "🔍", "Contacted": "📞", "Negotiating": "💬", "Signed": "✅",
+                               "Rejected": "❌"}.get(favorite['status'], "⚪")
 
-                priority_icon = priority_icons.get(favorite_data.get('priority', 'medium'), '⚡')
-                status_icon = status_icons.get(favorite_data.get('status', 'scouting'), '🔍')
-
-                st.markdown(f"**{priority_icon} {status_icon} {favorite_data['name']}**")
-                st.caption(f"{favorite_data['position']} | {favorite_data['team']} | Age: {favorite_data['age']}")
+                st.markdown(f"### {priority_icon} {favorite['player_name']} ({favorite['position']})")
+                st.caption(
+                    f"{status_icon} {favorite['status']} | {favorite['team']} | Age: {favorite['age']} | {favorite['nationality']}")
 
             with col2:
-                # Rating display
-                rating = favorite_data.get('rating', 0)
-                if rating > 0:
-                    stars = '⭐' * rating
-                    st.markdown(f"**{stars}**")
-
-            # Player details
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Minutes", f"{favorite_data['minutes']:,}")
-            with col2:
-                st.metric("Goals", favorite_data.get('goals', 0))
-            with col3:
-                st.metric("Assists", favorite_data.get('assists', 0))
-            with col4:
-                st.metric("Matches", favorite_data.get('matches', 0))
-
-            # Additional info
-            if favorite_data.get('reason'):
-                st.caption(f"📝 Reason: {favorite_data['reason']}")
-
-            if favorite_data.get('notes'):
-                st.caption(f"📄 Notes: {favorite_data['notes']}")
-
-            # Tags
-            if favorite_data.get('tags'):
-                tags_html = " ".join([
-                    f"<span style='background-color: #4CAF50; color: white; padding: 2px 6px; border-radius: 12px; font-size: 0.8em;'>#{tag}</span>"
-                    for tag in favorite_data['tags']
-                ])
-                st.markdown(tags_html, unsafe_allow_html=True)
-
-            # Action buttons
-            col1, col2, col3, col4, col5 = st.columns(5)
-
-            with col1:
-                if st.button("👁️ View", key=f"view_{favorite_id}", help="View player profile"):
+                if st.button("👁️ View Profile", key=f"view_profile_{fav_id}"):
                     st.session_state.selected_player = {
-                        'name': favorite_data['name'],
-                        'position': favorite_data['position']
+                        'name': favorite['player_name'],
+                        'position': favorite['position']
                     }
-                    st.session_state.current_page = 'player_profile'
+                    st.session_state.show_player_profile = True
                     st.rerun()
 
-            with col2:
-                if st.button("✏️ Edit", key=f"edit_{favorite_id}", help="Edit favorite"):
-                    self._show_edit_favorite_modal(favorite_id, favorite_data)
-
             with col3:
-                if st.button("📋 Notes", key=f"notes_{favorite_id}", help="Add/edit notes"):
-                    self._show_notes_modal(favorite_id, favorite_data)
+                if st.button("⚙️ Manage", key=f"manage_{fav_id}"):
+                    st.session_state[f"show_manage_{fav_id}"] = True
+                    st.rerun()
 
-            with col4:
-                if st.button("🏷️ Tags", key=f"tags_{favorite_id}", help="Manage tags"):
-                    self._show_tags_modal(favorite_id, favorite_data)
+            # Show management panel if requested
+            if st.session_state.get(f"show_manage_{fav_id}", False):
+                self.show_management_panel(fav_id, favorite)
 
-            with col5:
-                if st.button("🗑️ Remove", key=f"remove_{favorite_id}", help="Remove from favorites"):
-                    if st.session_state.get(f"confirm_remove_{favorite_id}"):
-                        self.remove_from_favorites(favorite_id)
-                        st.rerun()
-                    else:
-                        st.session_state[f"confirm_remove_{favorite_id}"] = True
-                        st.warning("Click again to confirm removal")
+            # Show basic info
+            if favorite.get('reason'):
+                st.markdown(f"**Reason:** {favorite['reason']}")
+
+            if favorite.get('notes'):
+                with st.expander("📝 Notes"):
+                    for i, note in enumerate(favorite['notes']):
+                        st.markdown(f"• {note}")
 
             st.markdown("---")
 
-    def _show_edit_favorite_modal(self, favorite_id: str, favorite_data: Dict):
-        """Show modal for editing favorite player"""
-
-        with st.expander(f"Edit {favorite_data['name']}", expanded=True):
+    def show_management_panel(self, fav_id: str, favorite: Dict):
+        """Show management panel for a favorite"""
+        with st.expander("⚙️ Manage Favorite", expanded=True):
             col1, col2 = st.columns(2)
 
             with col1:
-                new_priority = st.selectbox(
-                    "Priority",
-                    ['low', 'medium', 'high', 'urgent'],
-                    index=['low', 'medium', 'high', 'urgent'].index(favorite_data.get('priority', 'medium')),
-                    key=f"edit_priority_{favorite_id}"
+                # Update status
+                new_status = st.selectbox(
+                    "Status:",
+                    ["Scouting", "Contacted", "Negotiating", "Signed", "Rejected"],
+                    index=["Scouting", "Contacted", "Negotiating", "Signed", "Rejected"].index(favorite['status']),
+                    key=f"status_{fav_id}"
                 )
 
-                new_status = st.selectbox(
-                    "Status",
-                    ['scouting', 'contacted', 'negotiating', 'signed', 'rejected'],
-                    index=['scouting', 'contacted', 'negotiating', 'signed', 'rejected'].index(
-                        favorite_data.get('status', 'scouting')),
-                    key=f"edit_status_{favorite_id}"
+                # Update priority
+                new_priority = st.selectbox(
+                    "Priority:",
+                    ["High", "Medium", "Low"],
+                    index=["High", "Medium", "Low"].index(favorite['priority']),
+                    key=f"priority_{fav_id}"
                 )
 
             with col2:
-                new_rating = st.slider(
-                    "Rating (1-5 stars)",
-                    1, 5,
-                    value=favorite_data.get('rating', 3),
-                    key=f"edit_rating_{favorite_id}"
-                )
-
+                # Update collection
                 new_collection = st.text_input(
-                    "Collection",
-                    value=favorite_data.get('collection', 'Default'),
-                    key=f"edit_collection_{favorite_id}"
+                    "Collection:",
+                    value=favorite['collection'],
+                    key=f"collection_{fav_id}"
                 )
 
-            new_reason = st.text_area(
-                "Reason/Interest",
-                value=favorite_data.get('reason', ''),
-                key=f"edit_reason_{favorite_id}"
+                # Update reason
+                new_reason = st.text_area(
+                    "Reason:",
+                    value=favorite['reason'],
+                    key=f"reason_{fav_id}"
+                )
+
+            # Add note
+            new_note = st.text_input(
+                "Add Note:",
+                placeholder="Enter a new note...",
+                key=f"new_note_{fav_id}"
             )
 
-            if st.button("Save Changes", key=f"save_edit_{favorite_id}"):
-                updates = {
-                    'priority': new_priority,
-                    'status': new_status,
-                    'rating': new_rating,
-                    'collection': new_collection,
-                    'reason': new_reason
-                }
+            # Action buttons
+            col1, col2, col3, col4 = st.columns(4)
 
-                if self.update_favorite(favorite_id, updates):
-                    st.success("Favorite updated successfully!")
-                    st.rerun()
-                else:
-                    st.error("Failed to update favorite")
+            with col1:
+                if st.button("💾 Update", key=f"update_{fav_id}"):
+                    updates = {
+                        'status': new_status,
+                        'priority': new_priority,
+                        'collection': new_collection,
+                        'reason': new_reason
+                    }
 
-    def _show_notes_modal(self, favorite_id: str, favorite_data: Dict):
-        """Show modal for managing notes"""
+                    if new_note.strip():
+                        updates['notes'] = favorite.get('notes', []) + [
+                            f"{datetime.now().strftime('%Y-%m-%d')}: {new_note}"]
 
-        with st.expander(f"Notes for {favorite_data['name']}", expanded=True):
-            current_notes = favorite_data.get('notes', '')
-
-            new_notes = st.text_area(
-                "Notes",
-                value=current_notes,
-                height=100,
-                help="Add scouting notes, observations, or any relevant information",
-                key=f"notes_text_{favorite_id}"
-            )
-
-            if st.button("Save Notes", key=f"save_notes_{favorite_id}"):
-                if self.update_favorite(favorite_id, {'notes': new_notes}):
-                    st.success("Notes saved successfully!")
-                    st.rerun()
-
-    def _show_tags_modal(self, favorite_id: str, favorite_data: Dict):
-        """Show modal for managing tags"""
-
-        with st.expander(f"Tags for {favorite_data['name']}", expanded=True):
-            current_tags = favorite_data.get('tags', [])
-            all_existing_tags = self.get_all_tags()
-
-            # Select from existing tags
-            selected_existing = st.multiselect(
-                "Existing tags",
-                all_existing_tags,
-                default=[tag for tag in current_tags if tag in all_existing_tags],
-                key=f"existing_tags_{favorite_id}"
-            )
-
-            # Add new tags
-            new_tags_input = st.text_input(
-                "New tags (comma-separated)",
-                help="Enter new tags separated by commas",
-                key=f"new_tags_{favorite_id}"
-            )
-
-            new_tags = [tag.strip() for tag in new_tags_input.split(',') if tag.strip()] if new_tags_input else []
-
-            # Combine all tags
-            all_tags = list(set(selected_existing + new_tags))
-
-            if st.button("Save Tags", key=f"save_tags_{favorite_id}"):
-                if self.update_favorite(favorite_id, {'tags': all_tags}):
-                    st.success("Tags updated successfully!")
-                    st.rerun()
-
-    def _show_collections_management(self):
-        """Show collections management interface"""
-
-        st.subheader("📁 Collections Management")
-
-        collections = self.get_all_collections()
-
-        if not collections:
-            st.info("No collections yet. Players are automatically added to 'Default' collection.")
-            return
-
-        # Collection statistics
-        collection_stats = {}
-        favorites = self.load_favorites()
-
-        for fav in favorites.values():
-            collection = fav.get('collection', 'Default')
-            if collection not in collection_stats:
-                collection_stats[collection] = {'count': 0, 'positions': set(), 'teams': set()}
-
-            collection_stats[collection]['count'] += 1
-            collection_stats[collection]['positions'].add(fav.get('position', 'Unknown'))
-            collection_stats[collection]['teams'].add(fav.get('team', 'Unknown'))
-
-        # Display collections
-        for collection in collections:
-            stats = collection_stats.get(collection, {'count': 0, 'positions': set(), 'teams': set()})
-
-            with st.expander(f"📁 {collection} ({stats['count']} players)", expanded=True):
-                col1, col2, col3 = st.columns(3)
-
-                with col1:
-                    st.metric("Players", stats['count'])
-                with col2:
-                    st.metric("Positions", len(stats['positions']))
-                with col3:
-                    st.metric("Teams", len(stats['teams']))
-
-                # Show players in this collection
-                collection_favorites = self.get_favorites_by_collection(collection)
-
-                if collection_favorites:
-                    players_text = ", ".join(
-                        [f"{fav['name']} ({fav['position']})" for fav in collection_favorites[:10]])
-                    if len(collection_favorites) > 10:
-                        players_text += f" and {len(collection_favorites) - 10} more..."
-                    st.caption(f"Players: {players_text}")
-
-    def _show_bulk_actions(self, favorites: Dict):
-        """Show bulk action interface"""
-
-        st.subheader("🔧 Bulk Actions")
-
-        if not favorites:
-            st.info("No favorites for bulk actions")
-            return
-
-        # Export/Import section
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.markdown("**Export Favorites:**")
-
-            export_format = st.radio(
-                "Export format:",
-                ["JSON (Full data)", "CSV (Summary)"],
-                key="export_format"
-            )
-
-            if st.button("📥 Export Favorites"):
-                if export_format == "JSON (Full data)":
-                    export_data = self.export_favorites_json()
-                    if export_data:
-                        st.download_button(
-                            "Download JSON",
-                            export_data,
-                            "favorites.json",
-                            "application/json"
-                        )
-                else:
-                    export_data = self.export_favorites_csv()
-                    if export_data:
-                        st.download_button(
-                            "Download CSV",
-                            export_data,
-                            "favorites.csv",
-                            "text/csv"
-                        )
-
-        with col2:
-            st.markdown("**Import Favorites:**")
-
-            uploaded_file = st.file_uploader(
-                "Upload favorites file",
-                type=['json'],
-                help="Upload a JSON file with favorites data",
-                key="import_favorites"
-            )
-
-            if uploaded_file and st.button("📤 Import Favorites"):
-                try:
-                    import_data = uploaded_file.getvalue().decode('utf-8')
-                    if self.import_favorites_json(import_data):
-                        st.success("Favorites imported successfully!")
+                    if self.update_favorite(fav_id, updates):
+                        st.success("Updated!")
+                        st.session_state[f"show_manage_{fav_id}"] = False
                         st.rerun()
-                except Exception as e:
-                    st.error(f"Import failed: {str(e)}")
 
-        # Bulk update section
-        st.markdown("---")
-        st.markdown("**🔄 Bulk Update:**")
+            with col2:
+                if st.button("🗑️ Remove", key=f"remove_{fav_id}"):
+                    if self.remove_from_favorites(fav_id):
+                        st.success("Removed from favorites!")
+                        st.rerun()
 
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            bulk_priority = st.selectbox(
-                "Set Priority for All",
-                ['', 'low', 'medium', 'high', 'urgent'],
-                key="bulk_priority"
-            )
-
-            if bulk_priority and st.button("Update All Priorities"):
-                count = self._bulk_update_field('priority', bulk_priority)
-                st.success(f"Updated priority for {count} favorites")
-
-        with col2:
-            bulk_status = st.selectbox(
-                "Set Status for All",
-                ['', 'scouting', 'contacted', 'negotiating', 'signed', 'rejected'],
-                key="bulk_status"
-            )
-
-            if bulk_status and st.button("Update All Statuses"):
-                count = self._bulk_update_field('status', bulk_status)
-                st.success(f"Updated status for {count} favorites")
-
-        with col3:
-            bulk_collection = st.text_input(
-                "Move All to Collection",
-                key="bulk_collection"
-            )
-
-            if bulk_collection and st.button("Move All to Collection"):
-                count = self._bulk_update_field('collection', bulk_collection)
-                st.success(f"Moved {count} favorites to collection '{bulk_collection}'")
-
-        # Cleanup section
-        st.markdown("---")
-        st.markdown("**🧹 Cleanup Actions:**")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            if st.button("🧹 Remove Rejected Players"):
-                count = self._bulk_remove_by_status('rejected')
-                if count > 0:
-                    st.success(f"Removed {count} rejected players")
+            with col3:
+                if st.button("❌ Cancel", key=f"cancel_{fav_id}"):
+                    st.session_state[f"show_manage_{fav_id}"] = False
                     st.rerun()
-                else:
-                    st.info("No rejected players to remove")
-
-        with col2:
-            if st.button("🗑️ Clear All Favorites", type="primary"):
-                if st.session_state.get('confirm_clear_all'):
-                    self.clear_all_favorites()
-                    st.success("All favorites cleared!")
-                    st.rerun()
-                else:
-                    st.session_state['confirm_clear_all'] = True
-                    st.warning("Click again to confirm clearing ALL favorites")
-
-    def _bulk_update_field(self, field: str, value: str) -> int:
-        """Bulk update a field for all favorites"""
-
-        favorites = self.load_favorites()
-        count = 0
-
-        for favorite_id in favorites:
-            favorites[favorite_id][field] = value
-            favorites[favorite_id]['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            count += 1
-
-        if self.save_favorites(favorites):
-            return count
-        return 0
-
-    def _bulk_remove_by_status(self, status: str) -> int:
-        """Remove all favorites with specified status"""
-
-        favorites = self.load_favorites()
-        to_remove = []
-
-        for favorite_id, favorite_data in favorites.items():
-            if favorite_data.get('status') == status:
-                to_remove.append(favorite_id)
-
-        for favorite_id in to_remove:
-            del favorites[favorite_id]
-
-        if self.save_favorites(favorites):
-            return len(to_remove)
-        return 0
-
-    def clear_all_favorites(self) -> bool:
-        """Clear all favorites"""
-        return self.save_favorites({})
-
-    def _show_favorites_help(self):
-        """Show help information about favorites system"""
-
-        with st.expander("💡 How to Use Favorites System"):
-            st.markdown("""
-            **Getting Started:**
-            1. Add players from Player Profile pages using the ⭐ button
-            2. Organize players with collections, tags, and priorities
-            3. Track scouting progress with status updates
-            4. Add notes and ratings for detailed analysis
-
-            **Features:**
-            - **Collections**: Group players by criteria (e.g., "Summer Targets", "Youth Prospects")
-            - **Tags**: Add flexible labels (#pace, #leadership, #bargain)
-            - **Priority**: Mark urgency (🚨 Urgent, 🔥 High, ⚡ Medium, 📝 Low)
-            - **Status**: Track progress (🔍 Scouting → 📞 Contacted → 💬 Negotiating → ✅ Signed)
-            - **Ratings**: Rate players 1-5 stars based on your assessment
-            - **Notes**: Add detailed scouting observations
-
-            **Bulk Actions:**
-            - Export/import favorites for backup
-            - Bulk update priorities, statuses, or collections
-            - Clean up rejected players
-            """)
 
     def export_favorites_json(self) -> Optional[str]:
         """Export favorites as JSON"""
-
-        favorites = self.load_favorites()
-        if not favorites:
-            return None
-
         try:
-            export_data = {
-                'export_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'version': '1.0',
-                'favorites_count': len(favorites),
-                'favorites': favorites
-            }
-            return json.dumps(export_data, ensure_ascii=False, indent=2)
+            favorites = self.load_favorites()
+            if favorites:
+                export_data = {
+                    'export_type': 'favorites',
+                    'version': '1.0',
+                    'export_date': datetime.now().isoformat(),
+                    'favorites': favorites
+                }
+                return json.dumps(export_data, ensure_ascii=False, indent=2)
         except Exception as e:
             st.error(f"Error exporting favorites: {str(e)}")
-            return None
+        return None
 
-    def export_favorites_csv(self) -> Optional[str]:
-        """Export favorites as CSV"""
-
-        favorites = self.load_favorites()
-        if not favorites:
-            return None
-
-        try:
-            # Create DataFrame
-            data = []
-            for favorite_id, fav in favorites.items():
-                data.append({
-                    'Name': fav['name'],
-                    'Position': fav['position'],
-                    'Team': fav['team'],
-                    'Age': fav['age'],
-                    'Nationality': fav['nationality'],
-                    'Minutes': fav['minutes'],
-                    'Goals': fav.get('goals', 0),
-                    'Assists': fav.get('assists', 0),
-                    'Priority': fav.get('priority', 'medium'),
-                    'Status': fav.get('status', 'scouting'),
-                    'Collection': fav.get('collection', 'Default'),
-                    'Rating': fav.get('rating', 0),
-                    'Tags': ', '.join(fav.get('tags', [])),
-                    'Reason': fav.get('reason', ''),
-                    'Notes': fav.get('notes', ''),
-                    'Added Date': fav.get('added_date', ''),
-                    'Market Value': fav.get('market_value', 'Unknown')
-                })
-
-            df = pd.DataFrame(data)
-            return df.to_csv(index=False)
-        except Exception as e:
-            st.error(f"Error exporting CSV: {str(e)}")
-            return None
-
-    def import_favorites_json(self, import_data: str) -> bool:
+    def import_favorites_json(self, json_data: str) -> bool:
         """Import favorites from JSON"""
-
         try:
-            data = json.loads(import_data)
+            import_data = json.loads(json_data)
 
-            if 'favorites' not in data:
-                st.error("Invalid import format - missing favorites data")
+            if 'favorites' not in import_data:
+                st.error("Invalid favorites file format")
                 return False
 
-            imported_favorites = data['favorites']
+            # Load existing favorites
             existing_favorites = self.load_favorites()
 
-            # Count new vs existing
-            new_count = 0
-            updated_count = 0
+            # Merge imported favorites
+            imported_count = 0
+            for fav_id, favorite in import_data['favorites'].items():
+                existing_favorites[fav_id] = favorite
+                imported_count += 1
 
-            for favorite_id, favorite_data in imported_favorites.items():
-                if favorite_id in existing_favorites:
-                    updated_count += 1
-                else:
-                    new_count += 1
-
-                existing_favorites[favorite_id] = favorite_data
-
-            # Save updated favorites
+            # Save merged favorites
             if self.save_favorites(existing_favorites):
-                st.success(f"✅ Import successful: {new_count} new favorites, {updated_count} updated")
+                st.success(f"Imported {imported_count} favorite players")
                 return True
             else:
                 st.error("Failed to save imported favorites")
                 return False
 
-        except json.JSONDecodeError:
-            st.error("Invalid JSON format")
-            return False
         except Exception as e:
             st.error(f"Error importing favorites: {str(e)}")
             return False
+
+    def get_collections(self) -> List[str]:
+        """Get all collections"""
+        favorites = self.load_favorites()
+        collections = set()
+        for favorite in favorites.values():
+            collections.add(favorite.get('collection', 'General'))
+        return sorted(list(collections))
+
+    def get_favorites_by_status(self, status: str) -> Dict:
+        """Get favorites by status"""
+        favorites = self.load_favorites()
+        return {fav_id: fav for fav_id, fav in favorites.items() if fav['status'] == status}
+
+    def get_favorites_summary(self) -> Dict:
+        """Get summary statistics for favorites"""
+        favorites = self.load_favorites()
+
+        if not favorites:
+            return {}
+
+        summary = {
+            'total': len(favorites),
+            'by_status': {},
+            'by_priority': {},
+            'by_position': {},
+            'by_collection': {}
+        }
+
+        for favorite in favorites.values():
+            # By status
+            status = favorite['status']
+            summary['by_status'][status] = summary['by_status'].get(status, 0) + 1
+
+            # By priority
+            priority = favorite['priority']
+            summary['by_priority'][priority] = summary['by_priority'].get(priority, 0) + 1
+
+            # By position
+            position = favorite['position']
+            summary['by_position'][position] = summary['by_position'].get(position, 0) + 1
+
+            # By collection
+            collection = favorite['collection']
+            summary['by_collection'][collection] = summary['by_collection'].get(collection, 0) + 1
+
+        return summary

@@ -1,1019 +1,504 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from typing import Dict, List, Optional, Tuple
 import json
 from pathlib import Path
-from datetime import datetime
+from typing import Dict, List, Any, Optional, Tuple
+import numpy as np
 
 
 class CustomRankingsManager:
-    """Manages custom ranking systems and templates"""
+    """Manager for creating and managing custom ranking systems"""
 
     def __init__(self, data_processor, ranking_system):
         self.data_processor = data_processor
         self.ranking_system = ranking_system
-        self.config_dir = Path("data/configs")
-        self.config_dir.mkdir(parents=True, exist_ok=True)
-        self.rankings_file = self.config_dir / "custom_rankings.json"
+        self.rankings_file = Path("data/temp/custom_rankings.json")
+        self.ensure_data_dir()
 
-    def create_ranking_ui(self, position: str) -> Optional[Dict]:
-        """Show UI for creating custom rankings"""
+    def ensure_data_dir(self):
+        """Ensure data directory exists"""
+        self.rankings_file.parent.mkdir(parents=True, exist_ok=True)
 
-        st.subheader("🏆 Create Custom Ranking")
+    def load_custom_rankings(self) -> Dict:
+        """Load custom rankings from file"""
+        if self.rankings_file.exists():
+            try:
+                with open(self.rankings_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception as e:
+                st.error(f"Error loading custom rankings: {str(e)}")
+        return {}
 
-        if not position or position not in self.data_processor.dataframes:
-            # Show template options first
-            self._show_ranking_templates(position)
-            st.warning("Please select a position first")
-            return None
+    def save_custom_rankings(self, rankings: Dict):
+        """Save custom rankings to file"""
+        try:
+            with open(self.rankings_file, 'w', encoding='utf-8') as f:
+                json.dump(rankings, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            st.error(f"Error saving custom rankings: {str(e)}")
+            return False
 
-        position_df = self.data_processor.dataframes[position]
+    def get_available_metrics(self, position: str) -> List[str]:
+        """Get available metrics for a position"""
+        if position not in self.data_processor.dataframes:
+            return []
 
-        # Get available numeric metrics
-        available_metrics = self._get_available_metrics(position_df)
+        df = self.data_processor.dataframes[position]
+        exclude_cols = ['Jogador', 'Time', 'Nacionalidade', 'Pé', 'Altura', 'Valor de mercado',
+                        'Data de nascimento', 'Contrato expira em', 'Posição', 'Temporada',
+                        'Index', 'Position_File']
 
-        if not available_metrics:
-            st.error("No numeric metrics available for this position")
-            return None
+        available = []
+        for col in df.columns:
+            if col not in exclude_cols and pd.api.types.is_numeric_dtype(df[col]):
+                available.append(col)
 
-        # Template options at the top
-        self._show_ranking_templates(position)
+        return sorted(available)
 
-        st.markdown("---")
+    def create_ranking_ui_updated(self, position: str):
+        """Updated UI for creating custom rankings"""
+        st.subheader(f"🏆 Create Custom Ranking for {position}")
 
-        # Ranking basic info
-        col1, col2 = st.columns(2)
-
-        with col1:
-            ranking_name = st.text_input(
-                "📊 Ranking Name",
-                placeholder="e.g., Elite Defensive Midfielders",
-                help="Give your ranking system a descriptive name",
-                key=f"custom_ranking_name_{position}"
-            )
-
-        with col2:
-            ranking_category = st.selectbox(
-                "🏷️ Category",
-                ["Performance", "Potential", "Market Value", "Complete Player", "Specialized", "Custom"],
-                help="Choose the category that best fits your ranking",
-                key=f"custom_ranking_category_{position}"
-            )
-
-        ranking_description = st.text_area(
-            "📝 Description",
-            placeholder="Explain what this ranking measures and prioritizes...",
-            help="Describe the focus and criteria of your ranking system",
-            key=f"custom_ranking_description_{position}"
+        # Ranking name
+        ranking_name = st.text_input(
+            "Ranking Name",
+            placeholder="e.g., Complete Midfielder Assessment",
+            key=f"ranking_name_{position}"
         )
 
-        st.markdown("---")
-        st.markdown("### 🔧 **Ranking Metrics & Weights**")
-        st.markdown("Select metrics and their importance weights (must total 100%)")
+        if not ranking_name:
+            st.info("👆 Enter a ranking name to continue")
+            return
 
-        # Initialize session state for metrics
-        metrics_key = f'custom_ranking_metrics_{position}'
-        if metrics_key not in st.session_state:
-            st.session_state[metrics_key] = [
-                {'metric': '', 'weight': 0, 'direction': 'positive', 'min_threshold': None, 'importance': 'medium'}
-            ]
+        # Description
+        description = st.text_area(
+            "Description",
+            placeholder="Describe what this ranking evaluates...",
+            key=f"ranking_desc_{position}"
+        )
 
-        metrics_state = st.session_state[metrics_key]
-        total_weight = 0
+        # Get available metrics
+        available_metrics = self.get_available_metrics(position)
 
-        # Show current metrics
-        for i, metric_config in enumerate(metrics_state):
-            st.markdown(f"**Metric {i + 1}:**")
+        if not available_metrics:
+            st.error(f"No numeric metrics available for {position}")
+            return
 
-            col1, col2, col3, col4, col5, col6 = st.columns([3, 1, 1, 1, 1, 1])
+        # Number of metrics
+        num_metrics = st.slider(
+            "Number of Variables",
+            min_value=3,
+            max_value=10,
+            value=5,
+            key=f"num_metrics_{position}"
+        )
+
+        st.markdown("### 🔧 Ranking Metrics & Weights")
+
+        # Metrics selection
+        metrics = []
+        weights_sum = 0
+
+        for i in range(num_metrics):
+            st.markdown(f"**Variable {i + 1}**")
+
+            col1, col2, col3 = st.columns([3, 1, 1])
 
             with col1:
-                selected_metric = st.selectbox(
-                    "Metric",
-                    [''] + available_metrics,
-                    index=available_metrics.index(metric_config['metric']) + 1 if metric_config[
-                                                                                      'metric'] in available_metrics else 0,
-                    key=f"ranking_metric_{i}_{position}",
-                    label_visibility="collapsed"
+                metric = st.selectbox(
+                    f"Variable {i + 1}",
+                    available_metrics,
+                    key=f"ranking_metric_{position}_{i}",
+                    index=i if i < len(available_metrics) else 0
                 )
-                metric_config['metric'] = selected_metric
 
             with col2:
                 weight = st.number_input(
                     "Weight %",
-                    min_value=0,
+                    min_value=1,
                     max_value=100,
-                    value=metric_config['weight'],
-                    key=f"ranking_weight_{i}_{position}",
-                    label_visibility="collapsed"
+                    value=20,
+                    key=f"ranking_weight_{position}_{i}"
                 )
-                metric_config['weight'] = weight
-                total_weight += weight
 
             with col3:
                 direction = st.selectbox(
                     "Direction",
-                    ["positive", "negative"],
-                    index=0 if metric_config['direction'] == 'positive' else 1,
-                    key=f"ranking_direction_{i}_{position}",
-                    help="Positive: higher is better, Negative: lower is better",
-                    label_visibility="collapsed"
+                    ["Higher is better", "Lower is better"],
+                    key=f"ranking_direction_{position}_{i}"
                 )
-                metric_config['direction'] = direction
 
-            with col4:
-                importance = st.selectbox(
-                    "Importance",
-                    ["low", "medium", "high", "critical"],
-                    index=["low", "medium", "high", "critical"].index(metric_config.get('importance', 'medium')),
-                    key=f"ranking_importance_{i}_{position}",
-                    help="How critical is this metric for the ranking?",
-                    label_visibility="collapsed"
-                )
-                metric_config['importance'] = importance
+            metrics.append({
+                'metric': metric,
+                'weight': weight,
+                'direction': 'positive' if direction == "Higher is better" else 'negative'
+            })
 
-            with col5:
-                # Minimum threshold (optional)
-                if selected_metric:
-                    min_threshold = st.number_input(
-                        "Min Value",
-                        min_value=0.0,
-                        value=metric_config.get('min_threshold', 0.0) or 0.0,
-                        step=0.1,
-                        key=f"ranking_threshold_{i}_{position}",
-                        help="Minimum value required (0 = no minimum)",
-                        label_visibility="collapsed"
-                    )
-                    metric_config['min_threshold'] = min_threshold if min_threshold > 0 else None
-                else:
-                    st.text_input("Min Value", disabled=True, key=f"disabled_threshold_{i}_{position}",
-                                  label_visibility="collapsed")
-
-            with col6:
-                if len(metrics_state) > 1:
-                    if st.button("❌", key=f"ranking_remove_{i}_{position}", help="Remove metric"):
-                        metrics_state.pop(i)
-                        st.rerun()
-                else:
-                    st.text("")  # Empty space to maintain alignment
-
-            # Show metric preview if selected
-            if selected_metric and selected_metric in position_df.columns:
-                metric_values = pd.to_numeric(position_df[selected_metric], errors='coerce').dropna()
-                if not metric_values.empty:
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.caption(f"Min: {metric_values.min():.2f}")
-                    with col2:
-                        st.caption(f"Max: {metric_values.max():.2f}")
-                    with col3:
-                        st.caption(f"Avg: {metric_values.mean():.2f}")
-                    with col4:
-                        st.caption(f"Median: {metric_values.median():.2f}")
-
-            st.markdown("---")
-
-        # Metric management buttons
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            if st.button("➕ Add Metric", key=f"add_ranking_metric_{position}"):
-                if len(metrics_state) < 10:
-                    metrics_state.append({'metric': '', 'weight': 0, 'direction': 'positive',
-                                          'min_threshold': None, 'importance': 'medium'})
-                    st.rerun()
-                else:
-                    st.warning("Maximum 10 metrics allowed")
-
-        with col2:
-            if st.button("⚖️ Auto Balance Weights", key=f"auto_balance_ranking_{position}"):
-                valid_metrics = [m for m in metrics_state if m['metric']]
-                if valid_metrics:
-                    # Weight by importance
-                    importance_weights = {'low': 1, 'medium': 2, 'high': 3, 'critical': 4}
-                    total_importance = sum(importance_weights.get(m['importance'], 2) for m in valid_metrics)
-
-                    for metric_config in metrics_state:
-                        if metric_config['metric']:
-                            importance_factor = importance_weights.get(metric_config['importance'], 2)
-                            metric_config['weight'] = round((importance_factor / total_importance) * 100, 1)
-                    st.rerun()
-
-        with col3:
-            if st.button("🗑️ Clear All", key=f"clear_ranking_metrics_{position}"):
-                st.session_state[metrics_key] = [{'metric': '', 'weight': 0, 'direction': 'positive',
-                                                  'min_threshold': None, 'importance': 'medium'}]
-                st.rerun()
+            weights_sum += weight
 
         # Weight validation
-        if total_weight != 100 and any(m['metric'] for m in metrics_state):
-            st.error(f"⚠️ Total weight must be 100%. Current: {total_weight}%")
-        elif total_weight == 100:
-            st.success(f"✅ Total weight: {total_weight}%")
+        if weights_sum != 100:
+            st.warning(f"⚠️ Weights sum to {weights_sum}%. Should sum to 100%.")
 
-        # Advanced options
-        with st.expander("⚙️ Advanced Options"):
-            col1, col2 = st.columns(2)
+        # Age filtering (simplified - just min/max)
+        st.markdown("### 🎂 Age Filtering")
+        col1, col2 = st.columns(2)
 
-            with col1:
-                min_minutes_filter = st.number_input(
-                    "Minimum Minutes Played",
-                    min_value=0,
-                    max_value=3000,
-                    value=500,
-                    step=50,
-                    key=f"ranking_min_minutes_{position}",
-                    help="Only include players with at least this many minutes"
-                )
+        with col1:
+            min_age = st.number_input(
+                "Minimum Age",
+                min_value=16,
+                max_value=40,
+                value=18,
+                key=f"min_age_{position}"
+            )
 
-                age_weight_curve = st.selectbox(
-                    "Age Weighting",
-                    ["None", "Prefer Young (Under 25)", "Prefer Prime (25-30)", "Experience Bonus (30+)"],
-                    key=f"ranking_age_weight_{position}",
-                    help="Apply age-based adjustments to the ranking"
-                )
+        with col2:
+            max_age = st.number_input(
+                "Maximum Age",
+                min_value=16,
+                max_value=40,
+                value=35,
+                key=f"max_age_{position}"
+            )
 
-            with col2:
-                exclude_own_team = st.checkbox(
-                    "Exclude Own Team Players",
-                    value=True,
-                    key=f"ranking_exclude_own_{position}",
-                    help="Focus on external scouting targets"
-                )
+        # Create ranking
+        if weights_sum == 100 and st.button(f"Create Ranking", key=f"create_ranking_{position}"):
+            self.create_custom_ranking(ranking_name, description, position, metrics, min_age, max_age)
 
-                market_value_consideration = st.selectbox(
-                    "Market Value Factor",
-                    ["None", "Value for Money (Lower = Better)", "Quality Premium (Higher = Better)"],
-                    key=f"ranking_market_factor_{position}",
-                    help="How to factor in market value"
-                )
+    def create_custom_ranking(self, name: str, description: str, position: str,
+                              metrics: List[Dict], min_age: int, max_age: int):
+        """Create and save custom ranking"""
+        try:
+            # Load existing rankings
+            custom_rankings = self.load_custom_rankings()
 
-        # Preview ranking
-        if ranking_name and total_weight == 100 and any(m['metric'] for m in metrics_state if m['weight'] > 0):
-            st.markdown("---")
-            st.markdown("### 👀 **Ranking Preview**")
-            preview_data = self._calculate_ranking_preview(position_df, metrics_state, ranking_name,
-                                                           min_minutes_filter, age_weight_curve,
-                                                           exclude_own_team, market_value_consideration)
-            if preview_data is not None:
-                self._show_ranking_preview(preview_data, ranking_name)
+            # Create ranking ID
+            ranking_id = f"{position}_{name.lower().replace(' ', '_')}"
 
-        # Save ranking
-        st.markdown("---")
-        if st.button("💾 Save Custom Ranking", key=f"save_ranking_{position}"):
-            if not ranking_name:
-                st.error("Please enter a ranking name")
-                return None
-
-            valid_metrics = [m for m in metrics_state if m['metric'] and m['weight'] > 0]
-            if not valid_metrics:
-                st.error("Please select at least one metric with weight > 0")
-                return None
-
-            total_weight = sum(m['weight'] for m in valid_metrics)
-            if total_weight != 100:
-                st.error(f"Total weight must be 100%. Current: {total_weight}%")
-                return None
-
-            # Create ranking config
-            ranking_config = {
-                'name': ranking_name,
-                'description': ranking_description,
-                'category': ranking_category,
+            # Create ranking definition
+            ranking_def = {
+                'name': name,
+                'description': description,
                 'position': position,
-                'metrics': valid_metrics,
-                'min_minutes_filter': min_minutes_filter,
-                'age_weight_curve': age_weight_curve,
-                'exclude_own_team': exclude_own_team,
-                'market_value_consideration': market_value_consideration,
-                'created_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                'metrics': metrics,
+                'age_filter': {
+                    'min_age': min_age,
+                    'max_age': max_age
+                },
+                'created_at': pd.Timestamp.now().isoformat()
             }
 
             # Save ranking
-            if self.save_custom_ranking(ranking_config):
-                st.success(f"✅ Custom ranking '{ranking_name}' saved successfully!")
-                # Clear the form
-                if metrics_key in st.session_state:
-                    del st.session_state[metrics_key]
+            custom_rankings[ranking_id] = ranking_def
+
+            if self.save_custom_rankings(custom_rankings):
+                st.success(f"✅ Custom ranking '{name}' created successfully!")
                 st.rerun()
             else:
-                st.error("Failed to save custom ranking")
-
-        return None
-
-    def _show_ranking_templates(self, position: str):
-        """Show ranking template options"""
-
-        st.markdown("**🚀 Quick Start with Templates:**")
-
-        templates = self.get_ranking_templates()
-        position_templates = {k: v for k, v in templates.items()
-                              if v.get('positions', [position]) == [position] or 'all' in v.get('positions', [])}
-
-        if position_templates:
-            col1, col2 = st.columns([3, 1])
-
-            with col1:
-                selected_template = st.selectbox(
-                    "Choose a template:",
-                    [""] + list(position_templates.keys()),
-                    format_func=lambda x: position_templates[x]['name'] if x else "Select template...",
-                    key=f"ranking_template_select_{position}"
-                )
-
-            with col2:
-                if selected_template and st.button("📋 Apply Template", key=f"apply_ranking_template_{position}"):
-                    if position and self.apply_ranking_template(selected_template, position):
-                        st.success(f"✅ Applied template: {position_templates[selected_template]['name']}")
-                        st.rerun()
-                    else:
-                        st.error("Failed to apply template")
-
-            # Show template description
-            if selected_template:
-                template_info = position_templates[selected_template]
-                st.info(f"📖 **{template_info['name']}**: {template_info['description']}")
-
-    def _get_available_metrics(self, df: pd.DataFrame) -> List[str]:
-        """Get list of available numeric metrics"""
-
-        exclude_cols = [
-            'Jogador', 'Time', 'Nacionalidade', 'Pé', 'Altura', 'Valor de mercado',
-            'Data de nascimento', 'Contrato expira em', 'Posição', 'Temporada',
-            'Index', 'Position_File', 'Idade', 'Partidas jogadas', 'Minutos jogados'
-        ]
-
-        numeric_cols = []
-        for col in df.columns:
-            if col not in exclude_cols and pd.api.types.is_numeric_dtype(df[col]):
-                if not col.endswith('_percentile') and col != 'Overall_Score':
-                    numeric_cols.append(col)
-
-        return sorted(numeric_cols)
-
-    def _calculate_ranking_preview(self, df: pd.DataFrame, metrics_config: List[Dict],
-                                   ranking_name: str, min_minutes: int, age_curve: str,
-                                   exclude_own: bool, market_factor: str) -> Optional[pd.DataFrame]:
-        """Calculate preview of custom ranking"""
-
-        try:
-            # Apply filters first
-            filtered_df = df.copy()
-
-            # Minutes filter
-            if min_minutes > 0 and 'Minutos jogados' in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df['Minutos jogados'] >= min_minutes]
-
-            # Own team filter
-            if exclude_own and 'Time' in filtered_df.columns and hasattr(st.session_state, 'selected_team'):
-                filtered_df = filtered_df[filtered_df['Time'] != st.session_state.selected_team]
-
-            if filtered_df.empty:
-                st.warning("No players match the filters")
-                return None
-
-            # Calculate base score
-            ranking_scores = pd.Series(0.0, index=filtered_df.index)
-
-            for metric_config in metrics_config:
-                if not metric_config['metric'] or metric_config['weight'] == 0:
-                    continue
-
-                metric_col = metric_config['metric']
-                weight = metric_config['weight'] / 100
-                direction = metric_config['direction']
-                min_threshold = metric_config.get('min_threshold')
-
-                if metric_col in filtered_df.columns:
-                    values = pd.to_numeric(filtered_df[metric_col], errors='coerce').fillna(0)
-
-                    # Apply minimum threshold filter
-                    if min_threshold is not None:
-                        mask = values >= min_threshold
-                        values = values * mask  # Zero out values below threshold
-
-                    # Calculate percentiles for normalization
-                    percentiles = values.rank(pct=True) * 100
-
-                    # Apply direction (negative means lower is better)
-                    if direction == 'negative':
-                        percentiles = 100 - percentiles
-
-                    ranking_scores += percentiles * weight
-
-            # Apply age weighting if selected
-            if age_curve != "None" and 'Idade' in filtered_df.columns:
-                age_multiplier = self._calculate_age_multiplier(filtered_df['Idade'], age_curve)
-                ranking_scores *= age_multiplier
-
-            # Apply market value consideration
-            if market_factor != "None" and 'Valor de mercado' in filtered_df.columns:
-                market_multiplier = self._calculate_market_multiplier(filtered_df['Valor de mercado'], market_factor)
-                ranking_scores *= market_multiplier
-
-            # Create preview dataframe
-            preview_df = filtered_df[['Jogador', 'Time', 'Idade', 'Minutos jogados']].copy()
-            preview_df[ranking_name] = ranking_scores.round(1)
-            preview_df = preview_df.sort_values(ranking_name, ascending=False)
-
-            return preview_df.head(15)  # Top 15 for preview
+                st.error("❌ Failed to save custom ranking")
 
         except Exception as e:
-            st.error(f"Error calculating ranking preview: {str(e)}")
-            return None
+            st.error(f"Error creating ranking: {str(e)}")
 
-    def _calculate_age_multiplier(self, ages: pd.Series, age_curve: str) -> pd.Series:
-        """Calculate age-based multipliers"""
+    def show_manage_rankings_ui(self):
+        """Show manage rankings UI"""
+        st.subheader("🏆 Manage Custom Rankings")
 
-        multiplier = pd.Series(1.0, index=ages.index)
+        custom_rankings = self.load_custom_rankings()
 
-        if age_curve == "Prefer Young (Under 25)":
-            # Bonus for young players, penalty for older
-            multiplier = 1.2 - (ages - 20) * 0.02
-            multiplier = multiplier.clip(lower=0.8, upper=1.2)
+        if not custom_rankings:
+            st.info("📭 No custom rankings created yet. Create one in the 'Create Ranking' tab.")
+            return
 
-        elif age_curve == "Prefer Prime (25-30)":
-            # Peak at 25-30, decline outside
-            optimal_ages = (ages >= 25) & (ages <= 30)
-            multiplier[optimal_ages] = 1.1
-            multiplier[ages < 25] = 0.95 + (ages[ages < 25] - 18) * 0.02
-            multiplier[ages > 30] = 1.1 - (ages[ages > 30] - 30) * 0.03
-            multiplier = multiplier.clip(lower=0.7, upper=1.1)
+        # Group by position
+        rankings_by_position = {}
+        for ranking_id, ranking_def in custom_rankings.items():
+            position = ranking_def['position']
+            if position not in rankings_by_position:
+                rankings_by_position[position] = {}
+            rankings_by_position[position][ranking_id] = ranking_def
 
-        elif age_curve == "Experience Bonus (30+)":
-            # Bonus for experienced players
-            multiplier[ages >= 30] = 1.1
-            multiplier[ages < 25] = 0.9
+        # Show rankings by position
+        for position, position_rankings in rankings_by_position.items():
+            st.markdown(f"### 📍 {position} Rankings")
 
-        return multiplier.fillna(1.0)
+            for ranking_id, ranking_def in position_rankings.items():
+                with st.expander(f"🏆 {ranking_def['name']}", expanded=False):
+                    col1, col2 = st.columns([3, 1])
 
-    def _calculate_market_multiplier(self, market_values: pd.Series, market_factor: str) -> pd.Series:
-        """Calculate market value-based multipliers"""
+                    with col1:
+                        st.markdown(f"**Description:** {ranking_def.get('description', 'No description')}")
 
-        multiplier = pd.Series(1.0, index=market_values.index)
+                        st.markdown("**Variables:**")
+                        for metric in ranking_def['metrics']:
+                            direction_icon = "📈" if metric['direction'] == 'positive' else "📉"
+                            st.markdown(f"• {metric['metric']}: {metric['weight']}% {direction_icon}")
 
-        # Convert market values to numeric (this is simplified)
-        # In reality, you'd need to parse strings like "€2.5M"
-        # For now, assume they're comparable
+                        age_filter = ranking_def.get('age_filter', {})
+                        if age_filter:
+                            st.markdown(
+                                f"**Age Range:** {age_filter.get('min_age', 18)}-{age_filter.get('max_age', 35)} years")
 
-        if market_factor == "Value for Money (Lower = Better)":
-            # Prefer lower market values
-            multiplier = 1.1  # Simplified - would need actual value parsing
+                        st.caption(f"Created: {ranking_def.get('created_at', 'Unknown')}")
 
-        elif market_factor == "Quality Premium (Higher = Better)":
-            # Prefer higher market values
-            multiplier = 1.0  # Simplified - would need actual value parsing
+                    with col2:
+                        if st.button(f"🔍 Use Ranking", key=f"use_{ranking_id}"):
+                            st.session_state[f"active_custom_ranking_{position}"] = ranking_id
+                            st.success(f"Now using {ranking_def['name']}")
 
-        return multiplier.fillna(1.0)
+                        if st.button(f"🗑️ Delete", key=f"delete_ranking_{ranking_id}"):
+                            if self.delete_ranking(ranking_id):
+                                st.success(f"Deleted {ranking_def['name']}")
+                                st.rerun()
 
-    def _show_ranking_preview(self, preview_df: pd.DataFrame, ranking_name: str):
-        """Show preview of the custom ranking"""
+                st.markdown("---")
 
-        st.markdown(f"**🏆 Top 15 players by {ranking_name}:**")
-
-        display_df = preview_df.copy()
-        display_df['Rank'] = range(1, len(display_df) + 1)
-        display_df = display_df[['Rank', 'Jogador', 'Time', 'Idade', 'Minutos jogados', ranking_name]]
-        display_df.columns = ['Rank', 'Player', 'Team', 'Age', 'Minutes', ranking_name]
-
-        st.dataframe(display_df, use_container_width=True)
-
-        # Show distribution info
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Top Score", f"{preview_df[ranking_name].max():.1f}")
-        with col2:
-            st.metric("Average", f"{preview_df[ranking_name].mean():.1f}")
-        with col3:
-            st.metric("Score Range", f"{preview_df[ranking_name].max() - preview_df[ranking_name].min():.1f}")
-
-    def save_custom_ranking(self, ranking_config: Dict) -> bool:
-        """Save custom ranking to JSON file"""
-
+    def delete_ranking(self, ranking_id: str) -> bool:
+        """Delete a custom ranking"""
         try:
-            existing_rankings = self.load_custom_rankings()
-
-            ranking_id = f"{ranking_config['position']}_{ranking_config['name'].replace(' ', '_').lower()}"
-            existing_rankings[ranking_id] = ranking_config
-
-            with open(self.rankings_file, 'w', encoding='utf-8') as f:
-                json.dump(existing_rankings, f, ensure_ascii=False, indent=2)
-
-            return True
-
+            custom_rankings = self.load_custom_rankings()
+            if ranking_id in custom_rankings:
+                del custom_rankings[ranking_id]
+                return self.save_custom_rankings(custom_rankings)
+            return False
         except Exception as e:
-            st.error(f"Error saving custom ranking: {str(e)}")
+            st.error(f"Error deleting ranking: {str(e)}")
             return False
 
-    def load_custom_rankings(self) -> Dict:
-        """Load custom rankings from JSON file"""
-
-        if not self.rankings_file.exists():
-            return {}
-
+    def calculate_custom_ranking_score(self, df: pd.DataFrame, ranking_def: Dict) -> pd.DataFrame:
+        """Calculate custom ranking scores for a dataframe"""
         try:
-            with open(self.rankings_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            st.error(f"Error loading custom rankings: {str(e)}")
-            return {}
+            result_df = df.copy()
+            scores = pd.Series(0.0, index=df.index)
 
-    def get_custom_rankings_by_position(self, position: str) -> Dict:
-        """Get custom rankings for a specific position"""
+            for metric_def in ranking_def['metrics']:
+                metric_name = metric_def['metric']
+                weight = metric_def['weight'] / 100
+                direction = metric_def['direction']
 
-        all_rankings = self.load_custom_rankings()
-        return {k: v for k, v in all_rankings.items() if v.get('position') == position}
+                if metric_name in df.columns:
+                    values = pd.to_numeric(df[metric_name], errors='coerce').fillna(0)
 
-    def calculate_custom_ranking(self, df: pd.DataFrame, ranking_config: Dict) -> pd.DataFrame:
-        """Calculate custom ranking for a dataframe"""
+                    # Normalize to 0-100 scale using percentiles
+                    if len(values) > 1:
+                        percentiles = values.rank(pct=True) * 100
+                    else:
+                        percentiles = pd.Series(50.0, index=values.index)
 
-        try:
-            # Apply filters
-            filtered_df = df.copy()
-
-            min_minutes = ranking_config.get('min_minutes_filter', 0)
-            if min_minutes > 0 and 'Minutos jogados' in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df['Minutos jogados'] >= min_minutes]
-
-            exclude_own = ranking_config.get('exclude_own_team', False)
-            if exclude_own and 'Time' in filtered_df.columns and hasattr(st.session_state, 'selected_team'):
-                filtered_df = filtered_df[filtered_df['Time'] != st.session_state.selected_team]
-
-            if filtered_df.empty:
-                return pd.DataFrame()
-
-            # Calculate ranking scores
-            ranking_scores = pd.Series(0.0, index=filtered_df.index)
-
-            for metric_config in ranking_config['metrics']:
-                metric_col = metric_config['metric']
-                weight = metric_config['weight'] / 100
-                direction = metric_config['direction']
-                min_threshold = metric_config.get('min_threshold')
-
-                if metric_col in filtered_df.columns:
-                    values = pd.to_numeric(filtered_df[metric_col], errors='coerce').fillna(0)
-
-                    # Apply minimum threshold
-                    if min_threshold is not None:
-                        mask = values >= min_threshold
-                        values = values * mask
-
-                    # Calculate percentiles
-                    percentiles = values.rank(pct=True) * 100
-
+                    # Apply direction
                     if direction == 'negative':
                         percentiles = 100 - percentiles
 
-                    ranking_scores += percentiles * weight
+                    # Apply weight
+                    scores += percentiles * weight
 
-            # Apply age and market value adjustments
-            age_curve = ranking_config.get('age_weight_curve', 'None')
-            if age_curve != "None" and 'Idade' in filtered_df.columns:
-                age_multiplier = self._calculate_age_multiplier(filtered_df['Idade'], age_curve)
-                ranking_scores *= age_multiplier
+            result_df['Custom_Ranking_Score'] = scores.round(2)
 
-            market_factor = ranking_config.get('market_value_consideration', 'None')
-            if market_factor != "None" and 'Valor de mercado' in filtered_df.columns:
-                market_multiplier = self._calculate_market_multiplier(filtered_df['Valor de mercado'], market_factor)
-                ranking_scores *= market_multiplier
+            # Apply age filter if specified
+            age_filter = ranking_def.get('age_filter', {})
+            if age_filter and 'Idade' in result_df.columns:
+                min_age = age_filter.get('min_age', 0)
+                max_age = age_filter.get('max_age', 100)
+                result_df = result_df[
+                    (result_df['Idade'] >= min_age) &
+                    (result_df['Idade'] <= max_age)
+                    ]
 
-            # Add to dataframe and sort
-            result_df = filtered_df.copy()
-            result_df['Custom_Ranking_Score'] = ranking_scores.round(1)
+            # Sort by score
             result_df = result_df.sort_values('Custom_Ranking_Score', ascending=False)
 
             return result_df
 
         except Exception as e:
             st.error(f"Error calculating custom ranking: {str(e)}")
-            return pd.DataFrame()
+            return df
 
-    def show_manage_rankings_ui(self):
-        """Show UI for managing existing custom rankings"""
+    def get_custom_ranking_for_position(self, position: str) -> Optional[Dict]:
+        """Get active custom ranking for a position"""
+        active_ranking_key = f"active_custom_ranking_{position}"
 
-        st.subheader("🏆 Manage Custom Rankings")
+        if active_ranking_key in st.session_state:
+            ranking_id = st.session_state[active_ranking_key]
+            custom_rankings = self.load_custom_rankings()
+            return custom_rankings.get(ranking_id)
 
-        custom_rankings = self.load_custom_rankings()
-
-        if not custom_rankings:
-            st.info("No custom rankings created yet. Create your first ranking above!")
-            return
-
-        # Summary stats
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Rankings", len(custom_rankings))
-        with col2:
-            positions = set(r.get('position', 'Unknown') for r in custom_rankings.values())
-            st.metric("Positions", len(positions))
-        with col3:
-            categories = set(r.get('category', 'Unknown') for r in custom_rankings.values())
-            st.metric("Categories", len(categories))
-
-        # Filter options
-        col1, col2 = st.columns(2)
-
-        with col1:
-            position_filter = st.selectbox(
-                "Filter by Position",
-                ["All"] + sorted(positions),
-                key="rankings_position_filter"
-            )
-
-        with col2:
-            category_filter = st.selectbox(
-                "Filter by Category",
-                ["All"] + sorted(categories),
-                key="rankings_category_filter"
-            )
-
-        # Apply filters
-        filtered_rankings = custom_rankings.copy()
-        if position_filter != "All":
-            filtered_rankings = {k: v for k, v in filtered_rankings.items() if v.get('position') == position_filter}
-        if category_filter != "All":
-            filtered_rankings = {k: v for k, v in filtered_rankings.items() if v.get('category') == category_filter}
-
-        if not filtered_rankings:
-            st.info("No rankings match the current filters")
-            return
-
-        st.markdown("---")
-
-        # Group by position
-        rankings_by_position = {}
-        for ranking_id, ranking_config in filtered_rankings.items():
-            position = ranking_config['position']
-            if position not in rankings_by_position:
-                rankings_by_position[position] = []
-            rankings_by_position[position].append((ranking_id, ranking_config))
-
-        for position, rankings in rankings_by_position.items():
-            with st.expander(f"🎯 {position} Rankings ({len(rankings)})", expanded=True):
-
-                for ranking_id, ranking_config in rankings:
-                    col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
-
-                    with col1:
-                        st.markdown(f"**{ranking_config['name']}**")
-                        st.caption(
-                            f"📂 {ranking_config.get('category', 'N/A')} | 🕐 {ranking_config.get('created_date', 'Unknown')[:10]}")
-
-                        if ranking_config.get('description'):
-                            st.caption(f"📝 {ranking_config['description']}")
-
-                        # Show metrics summary
-                        metrics_summary = ", ".join([
-                            f"{m['metric']} ({m['weight']}%)"
-                            for m in ranking_config.get('metrics', [])
-                        ])
-                        if len(metrics_summary) > 100:
-                            metrics_summary = metrics_summary[:100] + "..."
-                        st.caption(f"📊 Metrics: {metrics_summary}")
-
-                    with col2:
-                        if st.button("🧪 Test", key=f"test_ranking_{ranking_id}", help="Test ranking on current data"):
-                            self._test_custom_ranking(ranking_config)
-
-                    with col3:
-                        if st.button("▶️ Run", key=f"run_ranking_{ranking_id}", help="Run full ranking"):
-                            self._run_custom_ranking(ranking_config)
-
-                    with col4:
-                        if st.button("📋 Copy", key=f"copy_ranking_{ranking_id}", help="Copy ranking for editing"):
-                            self._copy_ranking_to_creator(ranking_config)
-
-                    with col5:
-                        if st.button("🗑️ Delete", key=f"delete_ranking_{ranking_id}", help="Delete ranking"):
-                            if self.delete_custom_ranking(ranking_id):
-                                st.success(f"Deleted {ranking_config['name']}")
-                                st.rerun()
-
-                    st.markdown("---")
-
-    def _test_custom_ranking(self, ranking_config: Dict):
-        """Test a custom ranking and show results"""
-
-        position = ranking_config['position']
-        if position not in self.data_processor.dataframes:
-            st.error(f"Position {position} data not available")
-            return
-
-        df = self.data_processor.dataframes[position]
-        ranked_df = self.calculate_custom_ranking(df, ranking_config)
-
-        if ranked_df.empty:
-            st.warning("No players match the ranking criteria")
-            return
-
-        st.markdown(f"**🧪 Test Results for '{ranking_config['name']}':**")
-
-        # Show top 10 with ranking
-        display_df = ranked_df.head(10)[['Jogador', 'Time', 'Idade', 'Minutos jogados', 'Custom_Ranking_Score']].copy()
-        display_df.insert(0, 'Rank', range(1, len(display_df) + 1))
-        display_df.columns = ['Rank', 'Player', 'Team', 'Age', 'Minutes', 'Score']
-        st.dataframe(display_df, use_container_width=True)
-
-        # Show statistics
-        scores = ranked_df['Custom_Ranking_Score']
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Top Score", f"{scores.max():.1f}")
-        with col2:
-            st.metric("Average", f"{scores.mean():.1f}")
-        with col3:
-            st.metric("Median", f"{scores.median():.1f}")
-        with col4:
-            st.metric("Players", len(ranked_df))
-
-    def _run_custom_ranking(self, ranking_config: Dict):
-        """Run full custom ranking and show comprehensive results"""
-
-        position = ranking_config['position']
-        if position not in self.data_processor.dataframes:
-            st.error(f"Position {position} data not available")
-            return
-
-        df = self.data_processor.dataframes[position]
-        ranked_df = self.calculate_custom_ranking(df, ranking_config)
-
-        if ranked_df.empty:
-            st.warning("No players match the ranking criteria")
-            return
-
-        # Store results in session state for export
-        st.session_state[f'ranking_results_{ranking_config["name"]}'] = ranked_df
-
-        st.markdown(f"**🏆 Full Results for '{ranking_config['name']}':**")
-
-        # Show full results table
-        display_df = ranked_df[
-            ['Jogador', 'Time', 'Idade', 'Minutos jogados', 'Nacionalidade', 'Custom_Ranking_Score']].copy()
-        display_df.insert(0, 'Rank', range(1, len(display_df) + 1))
-        display_df.columns = ['Rank', 'Player', 'Team', 'Age', 'Minutes', 'Nationality', 'Score']
-
-        st.dataframe(display_df, use_container_width=True, height=600)
-
-        # Export options
-        col1, col2 = st.columns(2)
-        with col1:
-            csv_data = display_df.to_csv(index=False)
-            st.download_button(
-                "📥 Export as CSV",
-                csv_data,
-                f"{ranking_config['name']}_ranking.csv",
-                "text/csv",
-                use_container_width=True
-            )
-
-        with col2:
-            if st.button("⭐ Add Top 5 to Favorites", key=f"add_top5_{ranking_config['name']}"):
-                self._add_top_players_to_favorites(ranked_df.head(5), ranking_config['name'])
-
-    def _add_top_players_to_favorites(self, top_players_df: pd.DataFrame, ranking_name: str):
-        """Add top players from ranking to favorites"""
-
-        if 'favorites_manager' not in st.session_state:
-            st.error("Favorites system not available")
-            return
-
-        favorites_manager = st.session_state.favorites_manager
-        added_count = 0
-
-        for _, player in top_players_df.iterrows():
-            player_name = player['Jogador']
-            position = player.get('Position_File', '')
-
-            if not favorites_manager.is_favorite(player_name, position):
-                if favorites_manager.add_to_favorites(
-                        player_name,
-                        position,
-                        reason=f"Top performer in {ranking_name}",
-                        tags=[f"ranking_{ranking_name.lower()}", "top_performer"],
-                        collection=f"{ranking_name} Results"
-                ):
-                    added_count += 1
-
-        if added_count > 0:
-            st.success(f"Added {added_count} top players to favorites!")
-        else:
-            st.info("All top players are already in favorites")
-
-    def _copy_ranking_to_creator(self, ranking_config: Dict):
-        """Copy ranking configuration to the creator form"""
-
-        position = ranking_config['position']
-        metrics_key = f'custom_ranking_metrics_{position}'
-
-        # Copy metrics to session state
-        st.session_state[metrics_key] = ranking_config['metrics'].copy()
-
-        st.success(f"📋 Copied '{ranking_config['name']}' configuration to creator. Switch to Create tab to modify.")
-
-    def delete_custom_ranking(self, ranking_id: str) -> bool:
-        """Delete a custom ranking"""
-
-        try:
-            existing_rankings = self.load_custom_rankings()
-
-            if ranking_id in existing_rankings:
-                del existing_rankings[ranking_id]
-
-                with open(self.rankings_file, 'w', encoding='utf-8') as f:
-                    json.dump(existing_rankings, f, ensure_ascii=False, indent=2)
-
-                return True
-
-            return False
-
-        except Exception as e:
-            st.error(f"Error deleting custom ranking: {str(e)}")
-            return False
+        return None
 
     def get_ranking_templates(self) -> Dict:
         """Get predefined ranking templates"""
-
         return {
-            "complete_player": {
-                "name": "Complete Player Rating",
-                "description": "Balanced evaluation across all key performance areas",
-                "category": "Complete Player",
-                "positions": ["all"],
-                "metrics": [
-                    {"metric": "Passes", "weight": 20, "direction": "positive", "importance": "high"},
-                    {"metric": "Passes precisos %", "weight": 15, "direction": "positive", "importance": "medium"},
-                    {"metric": "Desarmes", "weight": 15, "direction": "positive", "importance": "medium"},
-                    {"metric": "Interceptações", "weight": 15, "direction": "positive", "importance": "medium"},
-                    {"metric": "Gols", "weight": 15, "direction": "positive", "importance": "high"},
-                    {"metric": "Assistências", "weight": 10, "direction": "positive", "importance": "medium"},
-                    {"metric": "Faltas", "weight": 10, "direction": "negative", "importance": "low"}
+            'complete_midfielder': {
+                'name': 'Complete Midfielder',
+                'category': 'Midfield',
+                'description': 'Evaluates all aspects of midfield play',
+                'positions': ['MC', 'MCD'],
+                'metrics': [
+                    {'metric': 'Passes precisos', 'weight': 25, 'direction': 'positive'},
+                    {'metric': 'Passes chave', 'weight': 20, 'direction': 'positive'},
+                    {'metric': 'Desarmes', 'weight': 20, 'direction': 'positive'},
+                    {'metric': 'Bolas recuperadas', 'weight': 15, 'direction': 'positive'},
+                    {'metric': 'Assistências', 'weight': 10, 'direction': 'positive'},
+                    {'metric': 'Gols', 'weight': 10, 'direction': 'positive'}
                 ]
             },
-
-            "attacking_threat": {
-                "name": "Attacking Threat",
-                "description": "Focus on goal scoring and creative output",
-                "category": "Performance",
-                "positions": ["PL", "EE", "ED", "MC"],
-                "metrics": [
-                    {"metric": "xG", "weight": 30, "direction": "positive", "importance": "critical"},
-                    {"metric": "Gols", "weight": 25, "direction": "positive", "importance": "critical"},
-                    {"metric": "xA", "weight": 20, "direction": "positive", "importance": "high"},
-                    {"metric": "Chutes no gol", "weight": 15, "direction": "positive", "importance": "medium"},
-                    {"metric": "Passes chave", "weight": 10, "direction": "positive", "importance": "medium"}
+            'modern_fullback': {
+                'name': 'Modern Full-Back',
+                'category': 'Defense',
+                'description': 'Evaluates both defensive and attacking contributions',
+                'positions': ['DE', 'DD'],
+                'metrics': [
+                    {'metric': 'Desarmes', 'weight': 25, 'direction': 'positive'},
+                    {'metric': 'Cruzamentos precisos', 'weight': 20, 'direction': 'positive'},
+                    {'metric': 'Tentativas bem-sucedidas de interceptação de cruzamento e passe', 'weight': 20,
+                     'direction': 'positive'},
+                    {'metric': 'Passes chave', 'weight': 15, 'direction': 'positive'},
+                    {'metric': 'Dribles bem-sucedidos', 'weight': 10, 'direction': 'positive'},
+                    {'metric': 'Assistências', 'weight': 10, 'direction': 'positive'}
                 ]
             },
-
-            "defensive_solidity": {
-                "name": "Defensive Solidity",
-                "description": "Comprehensive defensive performance evaluation",
-                "category": "Performance",
-                "positions": ["DCE", "DCD", "DE", "DD", "MCD"],
-                "metrics": [
-                    {"metric": "Desarmes", "weight": 25, "direction": "positive", "importance": "critical"},
-                    {"metric": "Interceptações", "weight": 25, "direction": "positive", "importance": "critical"},
-                    {"metric": "Disputas aéreas", "weight": 20, "direction": "positive", "importance": "high"},
-                    {"metric": "Bolas recuperadas", "weight": 15, "direction": "positive", "importance": "medium"},
-                    {"metric": "Passes precisos %", "weight": 10, "direction": "positive", "importance": "medium"},
-                    {"metric": "Faltas", "weight": 5, "direction": "negative", "importance": "low"}
+            'clinical_striker': {
+                'name': 'Clinical Striker',
+                'category': 'Attack',
+                'description': 'Focuses on goalscoring and finishing ability',
+                'positions': ['PL'],
+                'metrics': [
+                    {'metric': 'Gols', 'weight': 35, 'direction': 'positive'},
+                    {'metric': 'xG', 'weight': 25, 'direction': 'positive'},
+                    {'metric': 'Chutes no gol', 'weight': 20, 'direction': 'positive'},
+                    {'metric': 'Toques na área', 'weight': 10, 'direction': 'positive'},
+                    {'metric': 'Assistências', 'weight': 10, 'direction': 'positive'}
                 ]
             },
-
-            "passing_master": {
-                "name": "Passing Master",
-                "description": "Exceptional passing ability and distribution",
-                "category": "Specialized",
-                "positions": ["MC", "MCD", "DCE", "DCD"],
-                "metrics": [
-                    {"metric": "Passes", "weight": 30, "direction": "positive", "importance": "critical"},
-                    {"metric": "Passes precisos %", "weight": 25, "direction": "positive", "importance": "critical"},
-                    {"metric": "Passes progressivos", "weight": 20, "direction": "positive", "importance": "high"},
-                    {"metric": "Passes longos", "weight": 15, "direction": "positive", "importance": "medium"},
-                    {"metric": "Passes chave", "weight": 10, "direction": "positive", "importance": "medium"}
+            'defensive_rock': {
+                'name': 'Defensive Rock',
+                'category': 'Defense',
+                'description': 'Pure defensive solidity and reliability',
+                'positions': ['DCE', 'DCD'],
+                'metrics': [
+                    {'metric': 'Desarmes', 'weight': 30, 'direction': 'positive'},
+                    {'metric': 'Tentativas bem-sucedidas de interceptação de cruzamento e passe', 'weight': 25,
+                     'direction': 'positive'},
+                    {'metric': 'Disputas aéreas ganhas', 'weight': 20, 'direction': 'positive'},
+                    {'metric': 'Passes precisos', 'weight': 15, 'direction': 'positive'},
+                    {'metric': 'Faltas', 'weight': 10, 'direction': 'negative'}
                 ]
             },
-
-            "young_prospect": {
-                "name": "Young Prospect Potential",
-                "description": "Identifies promising young talents with high potential",
-                "category": "Potential",
-                "positions": ["all"],
-                "metrics": [
-                    {"metric": "Minutos jogados", "weight": 20, "direction": "positive", "importance": "high"},
-                    {"metric": "Gols", "weight": 15, "direction": "positive", "importance": "medium"},
-                    {"metric": "Assistências", "weight": 15, "direction": "positive", "importance": "medium"},
-                    {"metric": "Passes", "weight": 15, "direction": "positive", "importance": "medium"},
-                    {"metric": "Desarmes", "weight": 15, "direction": "positive", "importance": "medium"},
-                    {"metric": "Dribles", "weight": 10, "direction": "positive", "importance": "medium"},
-                    {"metric": "Faltas", "weight": 10, "direction": "negative", "importance": "low"}
-                ],
-                "age_weight_curve": "Prefer Young (Under 25)",
-                "market_value_consideration": "Value for Money (Lower = Better)"
-            },
-
-            "versatile_utility": {
-                "name": "Versatile Utility Player",
-                "description": "Well-rounded players who can adapt to multiple roles",
-                "category": "Complete Player",
-                "positions": ["all"],
-                "metrics": [
-                    {"metric": "Passes", "weight": 20, "direction": "positive", "importance": "high"},
-                    {"metric": "Desarmes", "weight": 18, "direction": "positive", "importance": "high"},
-                    {"metric": "Disputas no ataque", "weight": 15, "direction": "positive", "importance": "medium"},
-                    {"metric": "Disputas na defesa", "weight": 15, "direction": "positive", "importance": "medium"},
-                    {"metric": "Bolas recuperadas", "weight": 12, "direction": "positive", "importance": "medium"},
-                    {"metric": "Passes chave", "weight": 10, "direction": "positive", "importance": "medium"},
-                    {"metric": "Faltas", "weight": 10, "direction": "negative", "importance": "low"}
+            'creative_winger': {
+                'name': 'Creative Winger',
+                'category': 'Attack',
+                'description': 'Evaluates creativity and wing play effectiveness',
+                'positions': ['EE', 'ED'],
+                'metrics': [
+                    {'metric': 'Dribles bem-sucedidos', 'weight': 25, 'direction': 'positive'},
+                    {'metric': 'Cruzamentos precisos', 'weight': 25, 'direction': 'positive'},
+                    {'metric': 'Passes chave', 'weight': 20, 'direction': 'positive'},
+                    {'metric': 'xA', 'weight': 15, 'direction': 'positive'},
+                    {'metric': 'Assistências', 'weight': 15, 'direction': 'positive'}
                 ]
             }
         }
 
-    def apply_ranking_template(self, template_name: str, position: str) -> bool:
+    def apply_ranking_template(self, template_id: str, position: str) -> bool:
         """Apply a ranking template"""
-
         templates = self.get_ranking_templates()
 
-        if template_name not in templates:
+        if template_id not in templates:
             return False
 
-        template = templates[template_name].copy()
-        template['position'] = position
-        template['created_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        template = templates[template_id]
+        available_metrics = self.get_available_metrics(position)
 
-        # Adjust template for specific position if needed
-        if template.get('positions') == ['all'] or position in template.get('positions', []):
-            # Save as custom ranking
-            ranking_id = f"{position}_{template['name'].replace(' ', '_').lower()}"
-            existing_rankings = self.load_custom_rankings()
-            existing_rankings[ranking_id] = template
+        # Check if template is applicable to position
+        if template.get('positions') != ['all'] and position not in template.get('positions', []):
+            st.warning(f"{template['name']} is not designed for {position} position")
 
-            try:
-                with open(self.rankings_file, 'w', encoding='utf-8') as f:
-                    json.dump(existing_rankings, f, ensure_ascii=False, indent=2)
-                return True
-            except:
-                return False
+        # Check if all required metrics are available
+        valid_metrics = []
+        for metric in template['metrics']:
+            if metric['metric'] in available_metrics:
+                valid_metrics.append(metric)
 
-        return False
+        if not valid_metrics:
+            st.error(f"No compatible metrics found for {template['name']} in {position}")
+            return False
+
+        # Adjust weights if some metrics are missing
+        if len(valid_metrics) < len(template['metrics']):
+            total_weight = sum(metric['weight'] for metric in valid_metrics)
+            for metric in valid_metrics:
+                metric['weight'] = int((metric['weight'] / total_weight) * 100)
+
+        # Create the ranking
+        ranking_name = f"{template['name']} ({position})"
+        self.create_custom_ranking(
+            ranking_name,
+            template['description'],
+            position,
+            valid_metrics,
+            18,  # default min age
+            35  # default max age
+        )
+        return True
 
     def export_rankings_config(self) -> Optional[str]:
-        """Export all custom rankings as JSON"""
-
-        rankings = self.load_custom_rankings()
-        if not rankings:
-            return None
-
+        """Export rankings configuration as JSON"""
         try:
-            export_data = {
-                'export_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'version': '1.0',
-                'rankings_count': len(rankings),
-                'rankings': rankings
-            }
-            return json.dumps(export_data, ensure_ascii=False, indent=2)
+            custom_rankings = self.load_custom_rankings()
+            if custom_rankings:
+                export_data = {
+                    'export_type': 'custom_rankings',
+                    'version': '1.0',
+                    'rankings': custom_rankings
+                }
+                return json.dumps(export_data, ensure_ascii=False, indent=2)
         except Exception as e:
             st.error(f"Error exporting rankings: {str(e)}")
-            return None
+        return None
 
-    def import_rankings_config(self, import_data: str) -> bool:
-        """Import custom rankings from JSON"""
-
+    def import_rankings_config(self, json_data: str) -> bool:
+        """Import rankings configuration from JSON"""
         try:
-            data = json.loads(import_data)
+            import_data = json.loads(json_data)
 
-            if 'rankings' not in data:
-                st.error("Invalid import format - missing rankings data")
+            if 'rankings' not in import_data:
+                st.error("Invalid rankings file format")
                 return False
 
-            imported_rankings = data['rankings']
+            # Load existing rankings
             existing_rankings = self.load_custom_rankings()
 
-            # Count new vs existing
-            new_count = 0
-            updated_count = 0
+            # Merge imported rankings
+            imported_count = 0
+            for ranking_id, ranking_def in import_data['rankings'].items():
+                existing_rankings[ranking_id] = ranking_def
+                imported_count += 1
 
-            for ranking_id, ranking_config in imported_rankings.items():
-                if ranking_id in existing_rankings:
-                    updated_count += 1
-                else:
-                    new_count += 1
+            # Save merged rankings
+            if self.save_custom_rankings(existing_rankings):
+                st.success(f"Imported {imported_count} custom rankings")
+                return True
+            else:
+                st.error("Failed to save imported rankings")
+                return False
 
-                existing_rankings[ranking_id] = ranking_config
-
-            # Save updated rankings
-            with open(self.rankings_file, 'w', encoding='utf-8') as f:
-                json.dump(existing_rankings, f, ensure_ascii=False, indent=2)
-
-            st.success(f"Import successful: {new_count} new rankings, {updated_count} updated")
-            return True
-
-        except json.JSONDecodeError:
-            st.error("Invalid JSON format")
-            return False
         except Exception as e:
             st.error(f"Error importing rankings: {str(e)}")
             return False
 
+    def get_ranking_info(self, position: str) -> Optional[Dict]:
+        """Get ranking information for display"""
+        # First check for active custom ranking
+        custom_ranking = self.get_custom_ranking_for_position(position)
+        if custom_ranking:
+            return {
+                'name': f"Custom: {custom_ranking['name']}",
+                'description': custom_ranking['description'],
+                'metrics': [(m['metric'], m['weight'] / 100, 1 if m['direction'] == 'positive' else -1)
+                            for m in custom_ranking['metrics']],
+                'is_custom': True
+            }
 
-
+        # Fall back to default ranking system
+        return self.ranking_system.get_ranking_description(position)

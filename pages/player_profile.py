@@ -615,7 +615,7 @@ def show_performance_trends(player_data: pd.Series):
 
 
 def show_customizable_radar_chart(player_data: pd.Series, position: str):
-    """Show customizable radar chart for player analysis"""
+    """Show customizable radar chart for player analysis - FIXED VERSION"""
 
     st.subheader("🎯 Customizable Radar Chart Analysis")
 
@@ -636,6 +636,9 @@ def show_customizable_radar_chart(player_data: pd.Series, position: str):
         st.warning("No metrics available for radar chart.")
         return
 
+    # Create unique keys for the radar chart components
+    unique_key = f"radar_{position}_{player_data.get('Jogador', 'player')}"
+
     # Metric selection
     st.markdown("### 🔧 Select Variables for Radar Chart")
 
@@ -646,7 +649,7 @@ def show_customizable_radar_chart(player_data: pd.Series, position: str):
         min_value=3,
         max_value=max_metrics,
         value=min(6, max_metrics),
-        key="radar_num_metrics"
+        key=f"{unique_key}_num_metrics"
     )
 
     # Metric selection
@@ -656,11 +659,12 @@ def show_customizable_radar_chart(player_data: pd.Series, position: str):
     for i in range(num_metrics):
         col_idx = i % 2
         with cols[col_idx]:
+            default_index = min(i, len(available_metrics) - 1)
             metric = st.selectbox(
                 f"Variable {i + 1}",
                 available_metrics,
-                index=i if i < len(available_metrics) else 0,
-                key=f"radar_metric_{i}"
+                index=default_index,
+                key=f"{unique_key}_metric_{i}"
             )
             selected_metrics.append(metric)
 
@@ -678,10 +682,12 @@ def show_customizable_radar_chart(player_data: pd.Series, position: str):
         "Select players to compare with (optional):",
         other_players,
         max_selections=4,
-        key="radar_compare_players"
+        key=f"{unique_key}_compare_players"
     )
 
-    if st.button("Generate Radar Chart", key="generate_radar"):
+    # Generate button
+    generate_button_key = f"{unique_key}_generate"
+    if st.button("Generate Radar Chart", key=generate_button_key):
         if len(set(selected_metrics)) >= 3:
             create_customizable_radar_chart(
                 player_data, position, selected_metrics, compare_players
@@ -735,14 +741,17 @@ def create_customizable_radar_chart(player_data: pd.Series, position: str,
             players_data.append(comp_player_data)
 
     # Create radar chart
-    from components.charts import ScoutingCharts
-
-    ScoutingCharts.show_radar_comparison(
-        players_data,
-        selected_metrics,
-        position,
-        f"Custom Radar Chart - {player_data.get('Jogador', 'Player')}"
-    )
+    try:
+        from components.charts import ScoutingCharts
+        ScoutingCharts.show_radar_comparison(
+            players_data,
+            selected_metrics,
+            position,
+            f"Custom Radar Chart - {player_data.get('Jogador', 'Player')}"
+        )
+    except ImportError:
+        # Fallback radar chart if components.charts is not available
+        create_simple_radar_chart(players_data, selected_metrics, position)
 
     # Show explanation
     with st.expander("📖 Chart Explanation"):
@@ -761,6 +770,53 @@ def create_customizable_radar_chart(player_data: pd.Series, position: str,
         for i, metric in enumerate(selected_metrics):
             original_value = player_data.get(metric, 0)
             st.markdown(f"• **{metric}**: {original_value:.2f}")
+
+
+def create_simple_radar_chart(players_data: List[Dict], selected_metrics: List[str], position: str):
+    """Create a simple radar chart using plotly"""
+
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
+    fig = go.Figure()
+
+    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57']
+
+    for i, player_data in enumerate(players_data):
+        player_name = player_data['Player']
+
+        # Get percentile values
+        values = []
+        for metric in selected_metrics:
+            percentile_key = f'{metric}_percentile'
+            value = player_data.get(percentile_key, 50)
+            values.append(value)
+
+        # Close the radar chart by adding first value at the end
+        values.append(values[0])
+        metrics_display = selected_metrics + [selected_metrics[0]]
+
+        fig.add_trace(go.Scatterpolar(
+            r=values,
+            theta=metrics_display,
+            fill='toself',
+            name=player_name,
+            line=dict(color=colors[i % len(colors)]),
+            fillcolor=colors[i % len(colors)],
+            opacity=0.3
+        ))
+
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 100]
+            )),
+        showlegend=True,
+        title=f"Custom Radar Chart - {position} Players Comparison"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def get_key_metrics_for_position(position: str) -> List[str]:
