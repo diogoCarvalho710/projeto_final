@@ -15,7 +15,7 @@ def show_player_profile():
     # Check if player is selected
     if not st.session_state.get('selected_player'):
         st.title("👤 Player Profile")
-        st.info("👆 Select a player from the Team Dashboard to view their profile!")
+        st.info("👆 Select a player from the Team Dashboard or Scouting page to view their profile!")
 
         # Back button
         if st.button("🏠 Back to Team Dashboard"):
@@ -38,12 +38,39 @@ def show_player_profile():
     st.subheader(f"{player_name} ({position})")
 
     # Navigation buttons
-    col1, col2 = st.columns([1, 2])
+    col1, col2, col3 = st.columns([1, 1, 2])
 
     with col1:
         if st.button("🏠 Dashboard"):
             st.session_state.current_page = 'dashboard'
             st.rerun()
+
+    with col2:
+        if st.button("🔍 Back to Scouting"):
+            st.session_state.current_page = 'scouting'
+            st.rerun()
+
+    with col3:
+        # Add to favorites button (moved here as requested)
+        if st.button("⭐ Add to Favorites", key="add_to_favorites"):
+            try:
+                if 'favorites_manager' not in st.session_state:
+                    from src.favorites_manager import FavoritesManager
+                    st.session_state.favorites_manager = FavoritesManager(st.session_state.data_processor)
+
+                favorites_manager = st.session_state.favorites_manager
+
+                if favorites_manager.add_to_favorites(
+                        player_name,
+                        position,
+                        reason="Added from player profile",
+                        collection="Player Profiles"
+                ):
+                    st.success(f"✅ {player_name} added to favorites!")
+                else:
+                    st.warning(f"⚠️ {player_name} is already in favorites or could not be added")
+            except Exception as e:
+                st.error(f"Error adding to favorites: {str(e)}")
 
     st.divider()
 
@@ -60,43 +87,7 @@ def show_player_profile():
         show_performance_analysis(player_data, position)
 
     with tab4:
-        show_radar_chart(player_data, position)
-
-
-def show_position_player_selector(position: str, current_player: str):
-    """Show selector for other players in same position"""
-
-    team = st.session_state.selected_team
-    team_players = st.session_state.data_processor.get_team_players(team)
-
-    if position in team_players:
-        position_df = team_players[position]
-        other_players = position_df[position_df['Jogador'] != current_player]['Jogador'].tolist()
-
-        if other_players:
-            # Create options list with current player first
-            all_players = [current_player] + other_players
-
-            # Find current index
-            current_index = 0
-            if current_player in all_players:
-                current_index = all_players.index(current_player)
-
-            selected = st.selectbox(
-                f"🔄 Other {position} players:",
-                all_players,
-                index=current_index,
-                key=f"player_selector_{position}"
-            )
-
-            # Only change if different player selected
-            if selected != current_player:
-                st.session_state.selected_player = {
-                    'name': selected,
-                    'position': position
-                }
-                # Force rerun to update profile
-                st.rerun()
+        show_customizable_radar_chart(player_data, position)
 
 
 def show_player_overview(player_data: pd.Series, position: str):
@@ -122,7 +113,7 @@ def show_player_overview(player_data: pd.Series, position: str):
     with col5:
         st.metric("Market Value", player_data.get('Valor de mercado', 'N/A'))
 
-    st.divider()
+    st.markdown("---")
 
     # Playing Time
     st.subheader("⏱️ Playing Time")
@@ -149,7 +140,7 @@ def show_player_overview(player_data: pd.Series, position: str):
         else:
             st.metric("Playing Time %", "0.0%")
 
-    st.divider()
+    st.markdown("---")
 
     # Key Performance Metrics
     st.subheader("⚽ Key Performance Metrics")
@@ -397,7 +388,7 @@ def show_key_metrics_by_position(player_data: pd.Series, position: str):
 
 
 def show_player_statistics(player_data: pd.Series, position: str):
-    """Show detailed player statistics"""
+    """Show detailed player statistics with better section divisions"""
 
     st.subheader("📊 Detailed Statistics")
 
@@ -422,7 +413,9 @@ def show_player_statistics(player_data: pd.Series, position: str):
 
     for category, metrics in metric_categories.items():
         if metrics:
-            st.subheader(f"📈 {category}")
+            # Section header with strong divider
+            st.markdown(f"## 📈 {category}")
+            st.markdown("---")
 
             # Show metrics in columns
             metrics_per_row = 4
@@ -442,6 +435,9 @@ def show_player_statistics(player_data: pd.Series, position: str):
 
                         with col:
                             st.metric(metric_name, formatted_value)
+
+            # Lighter divider between sections
+            st.markdown("---")
 
 
 def categorize_metrics(metrics: Dict, position: str) -> Dict[str, Dict]:
@@ -497,9 +493,14 @@ def categorize_metrics(metrics: Dict, position: str) -> Dict[str, Dict]:
 
 
 def show_performance_analysis(player_data: pd.Series, position: str):
-    """Show performance analysis with comparisons"""
+    """Show performance analysis with comparisons and better section divisions"""
 
+    # Main section header
     st.subheader("📈 Performance Analysis")
+    st.markdown("---")
+
+    # Position comparison section
+    st.markdown("## 🔄 vs Position Average")
 
     # Get position averages for comparison
     team_players = st.session_state.data_processor.get_team_players(st.session_state.selected_team)
@@ -537,8 +538,6 @@ def show_performance_analysis(player_data: pd.Series, position: str):
 
         if comparison_data:
             # Display comparison
-            st.subheader("🔄 vs Position Average")
-
             for data in comparison_data:
                 col1, col2, col3 = st.columns(3)
 
@@ -573,14 +572,17 @@ def show_performance_analysis(player_data: pd.Series, position: str):
         else:
             st.info("No comparable metrics found for position analysis.")
 
-    # Performance over time (if available)
+    # Section divider
+    st.markdown("---")
+
+    # Performance over time section
+    st.markdown("## 📊 Season Performance")
+
     show_performance_trends(player_data)
 
 
 def show_performance_trends(player_data: pd.Series):
     """Show performance trends if data is available"""
-
-    st.subheader("📊 Season Performance")
 
     # Show key season metrics
     col1, col2, col3 = st.columns(3)
@@ -612,92 +614,153 @@ def show_performance_trends(player_data: pd.Series):
             st.metric("Assists per 90min", "0.00")
 
 
-def show_radar_chart(player_data: pd.Series, position: str):
-    """Show radar chart for player analysis"""
+def show_customizable_radar_chart(player_data: pd.Series, position: str):
+    """Show customizable radar chart for player analysis"""
 
-    st.subheader("🎯 Radar Chart Analysis")
+    st.subheader("🎯 Customizable Radar Chart Analysis")
 
-    # Get metrics for radar chart based on actual available columns
-    radar_metrics = get_radar_metrics_for_position_actual(position, player_data.index)
+    # Get available numeric metrics
+    exclude_cols = ['Jogador', 'Time', 'Nacionalidade', 'Pé', 'Altura', 'Valor de mercado',
+                    'Data de nascimento', 'Contrato expira em', 'Posição', 'Temporada',
+                    'Index', 'Position_File', 'Idade', 'Partidas jogadas', 'Minutos jogados']
 
-    # Prepare data
-    radar_data = []
-    radar_labels = []
+    available_metrics = []
+    for col in player_data.index:
+        if col not in exclude_cols and pd.api.types.is_numeric_dtype(type(player_data[col])):
+            if not col.endswith('_percentile') and col != 'Overall_Score':
+                available_metrics.append(col)
 
-    for metric in radar_metrics:
-        if metric in player_data.index:
-            value = player_data[metric]
+    available_metrics = sorted(available_metrics)
 
-            # Convert to numeric, handling strings
-            try:
-                numeric_value = pd.to_numeric(value, errors='coerce')
-                if pd.notna(numeric_value):
-                    radar_data.append(float(numeric_value))
-                    radar_labels.append(metric)
-            except:
-                continue
-
-    if len(radar_data) < 3:
-        st.warning("Not enough data points for radar chart. Need at least 3 metrics.")
+    if not available_metrics:
+        st.warning("No metrics available for radar chart.")
         return
 
-    # Normalize data for radar chart (0-100 scale)
-    max_values = get_max_values_for_position(position)
-    normalized_data = []
+    # Metric selection
+    st.markdown("### 🔧 Select Variables for Radar Chart")
 
-    for i, value in enumerate(radar_data):
-        metric = radar_labels[i]
-        max_val = max_values.get(metric, value * 2)  # Default to value * 2 if no max
-        if max_val > 0:
-            normalized_value = min(100, (value / max_val) * 100)
-        else:
-            normalized_value = 0
-        normalized_data.append(normalized_value)
-
-    # Create radar chart
-    fig = go.Figure()
-
-    fig.add_trace(go.Scatterpolar(
-        r=normalized_data + [normalized_data[0]],  # Close the polygon
-        theta=radar_labels + [radar_labels[0]],  # Close the polygon
-        fill='toself',
-        name=player_data.get('Jogador', 'Player'),
-        line_color='rgb(79, 70, 229)',
-        fillcolor='rgba(79, 70, 229, 0.2)'
-    ))
-
-    fig.update_layout(
-        polar=dict(
-            radialaxis=dict(
-                visible=True,
-                range=[0, 100],
-                tickmode='linear',
-                tick0=0,
-                dtick=20
-            )
-        ),
-        showlegend=True,
-        title=f"Performance Radar - {player_data.get('Jogador', 'Player')}",
-        height=500
+    # Number of metrics selector
+    max_metrics = min(8, len(available_metrics))
+    num_metrics = st.slider(
+        "Number of variables:",
+        min_value=3,
+        max_value=max_metrics,
+        value=min(6, max_metrics),
+        key="radar_num_metrics"
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    # Metric selection
+    selected_metrics = []
+    cols = st.columns(2)
 
-    # Show radar metrics explanation
-    with st.expander("📖 Radar Chart Explanation"):
+    for i in range(num_metrics):
+        col_idx = i % 2
+        with cols[col_idx]:
+            metric = st.selectbox(
+                f"Variable {i + 1}",
+                available_metrics,
+                index=i if i < len(available_metrics) else 0,
+                key=f"radar_metric_{i}"
+            )
+            selected_metrics.append(metric)
+
+    # Player comparison option
+    st.markdown("### 👥 Compare with Other Players")
+
+    # Get all players from same position across all teams
+    position_df = st.session_state.data_processor.dataframes[position]
+    all_players = position_df['Jogador'].tolist()
+
+    # Remove current player from options
+    other_players = [p for p in all_players if p != player_data.get('Jogador')]
+
+    compare_players = st.multiselect(
+        "Select players to compare with (optional):",
+        other_players,
+        max_selections=4,
+        key="radar_compare_players"
+    )
+
+    if st.button("Generate Radar Chart", key="generate_radar"):
+        if len(set(selected_metrics)) >= 3:
+            create_customizable_radar_chart(
+                player_data, position, selected_metrics, compare_players
+            )
+        else:
+            st.error("Please select at least 3 different variables")
+
+
+def create_customizable_radar_chart(player_data: pd.Series, position: str,
+                                    selected_metrics: List[str], compare_players: List[str]):
+    """Create the actual customizable radar chart"""
+
+    # Get position dataframe for percentile calculations
+    position_df = st.session_state.data_processor.dataframes[position]
+
+    # Prepare players data for radar
+    players_data = []
+
+    # Add main player
+    main_player_data = {'Player': player_data.get('Jogador', 'Main Player')}
+    for metric in selected_metrics:
+        if metric in player_data.index:
+            # Calculate percentile for this metric
+            values = pd.to_numeric(position_df[metric], errors='coerce')
+            percentile = (values.rank(pct=True) * 100).fillna(0)
+
+            # Find player's percentile
+            player_row_idx = position_df[position_df['Jogador'] == player_data.get('Jogador')].index
+            if len(player_row_idx) > 0:
+                player_percentile = percentile.iloc[player_row_idx[0]]
+            else:
+                player_percentile = 50  # Default to median
+
+            main_player_data[f'{metric}_percentile'] = player_percentile
+
+    players_data.append(main_player_data)
+
+    # Add comparison players
+    for comp_player_name in compare_players:
+        comp_player_row = position_df[position_df['Jogador'] == comp_player_name]
+        if not comp_player_row.empty:
+            comp_player_data = {'Player': comp_player_name}
+            for metric in selected_metrics:
+                if metric in position_df.columns:
+                    values = pd.to_numeric(position_df[metric], errors='coerce')
+                    percentile = (values.rank(pct=True) * 100).fillna(0)
+
+                    comp_player_percentile = percentile.iloc[comp_player_row.index[0]]
+                    comp_player_data[f'{metric}_percentile'] = comp_player_percentile
+
+            players_data.append(comp_player_data)
+
+    # Create radar chart
+    from components.charts import ScoutingCharts
+
+    ScoutingCharts.show_radar_comparison(
+        players_data,
+        selected_metrics,
+        position,
+        f"Custom Radar Chart - {player_data.get('Jogador', 'Player')}"
+    )
+
+    # Show explanation
+    with st.expander("📖 Chart Explanation"):
         st.markdown(f"""
-        **Radar Chart for {position} Position:**
+        **Custom Radar Chart Explanation:**
 
-        This radar chart shows the player's performance across key metrics for their position.
-        Values are normalized on a 0-100 scale based on typical ranges for the position.
+        - Each axis represents one of your selected variables
+        - Values are shown as **percentiles** (0-100) compared to all {position} players in the dataset
+        - **Higher values = better performance** for that variable
+        - The colored area shows each player's overall profile across selected variables
+        - **Larger area = better overall performance** in the selected metrics
 
-        **Metrics shown:**
+        **Selected Variables:**
         """)
 
-        for i, metric in enumerate(radar_labels):
-            original_value = radar_data[i]
-            normalized_value = normalized_data[i]
-            st.markdown(f"- **{metric}**: {original_value:.2f} (Score: {normalized_value:.0f}/100)")
+        for i, metric in enumerate(selected_metrics):
+            original_value = player_data.get(metric, 0)
+            st.markdown(f"• **{metric}**: {original_value:.2f}")
 
 
 def get_key_metrics_for_position(position: str) -> List[str]:
@@ -720,106 +783,3 @@ def get_key_metrics_for_position(position: str) -> List[str]:
     }
 
     return metrics.get(position, ['Passes', 'Passes precisos', 'Faltas', 'Ações / com sucesso'])
-
-
-def get_radar_metrics_for_position_actual(position: str, available_columns: List) -> List[str]:
-    """Get radar metrics based on actual available columns in the data"""
-
-    # Convert to list if it's an Index
-    if hasattr(available_columns, 'tolist'):
-        available_columns = available_columns.tolist()
-
-    # Priority metrics by position based on actual CSV columns
-    position_priorities = {
-        'GR': [
-            'Defesas', 'Gols sofridos', 'Passes', 'Passes precisos', 'Defesas, %',
-            'Chutes do adv.', 'Defesas difíceis', 'Passes precisos %'
-        ],
-        'DCE': [
-            'Passes', 'Passes precisos', 'Passes precisos %',
-            'Tentativas bem-sucedidas de interceptação de cruzamento e passe',
-            'Defesas', 'Faltas', 'Cartões amarelos'
-        ],
-        'DCD': [
-            'Passes', 'Passes precisos', 'Passes precisos %',
-            'Tentativas bem-sucedidas de interceptação de cruzamento e passe',
-            'Defesas', 'Faltas', 'Cartões amarelos'
-        ],
-        'DE': [
-            'Passes', 'Passes precisos', 'Passes chave', 'Cruzamentos do adversário',
-            'Tentativas bem-sucedidas de interceptação de cruzamento e passe', 'Faltas'
-        ],
-        'DD': [
-            'Passes', 'Passes precisos', 'Passes chave', 'Cruzamentos do adversário',
-            'Tentativas bem-sucedidas de interceptação de cruzamento e passe', 'Faltas'
-        ],
-        'EE': [
-            'Passes chave', 'Passes precisos', 'Passes', 'Participação em ataques de pontuação',
-            'Ações / com sucesso', 'Faltas'
-        ],
-        'ED': [
-            'Passes chave', 'Passes precisos', 'Passes', 'Participação em ataques de pontuação',
-            'Ações / com sucesso', 'Faltas'
-        ],
-        'MCD': [
-            'Passes', 'Passes precisos', 'Tentativas bem-sucedidas de interceptação de cruzamento e passe',
-            'Passes chave', 'Ações / com sucesso', 'Faltas'
-        ],
-        'MC': [
-            'Passes', 'Passes chave', 'Passes precisos', 'Participação em ataques de pontuação',
-            'Ações / com sucesso', 'Passes chave precisos'
-        ],
-        'PL': [
-            'Passes chave', 'Participação em ataques de pontuação', 'Ações / com sucesso',
-            'Passes', 'Passes precisos', 'Faltas'
-        ]
-    }
-
-    # Get priority list for position
-    priorities = position_priorities.get(position, [
-        'Passes', 'Passes precisos', 'Passes chave', 'Ações / com sucesso', 'Faltas'
-    ])
-
-    # Find metrics that exist in the data
-    found_metrics = []
-    for metric in priorities:
-        if metric in available_columns:
-            found_metrics.append(metric)
-            if len(found_metrics) >= 5:  # Limit to 5 metrics for readability
-                break
-
-    # If not enough specific metrics found, add general numeric ones
-    if len(found_metrics) < 3:
-        exclude = ['Idade', 'Partidas jogadas', 'Minutos jogados', 'Index'] + found_metrics
-
-        for col in available_columns:
-            if col not in exclude and len(found_metrics) < 5:
-                # Check if it looks like a numeric performance metric
-                if any(word in col.lower() for word in ['pass', 'gol', 'defes', 'chute', 'falta', 'açõ', 'cruzamento']):
-                    found_metrics.append(col)
-
-    return found_metrics[:5]  # Return max 5 metrics
-
-
-def get_max_values_for_position(position: str) -> Dict[str, float]:
-    """Get typical maximum values for radar chart normalization"""
-
-    max_values = {
-        # Goalkeepers
-        'Defesas': 150, 'Passes': 1000, 'Passes longos': 200, 'Defesas %': 100, 'Jogos sem sofrer gols': 15,
-
-        # Defenders
-        'Desarmes': 100, 'Interceptações': 80, 'Disputas na defesa': 200, 'Disputas aéreas': 150,
-        'Cruzamentos': 80, 'Passes progressivos': 200,
-
-        # Midfielders
-        'Passes': 2000, 'Passes para chute': 80, 'Bolas recuperadas': 200,
-
-        # Wingers/Forwards
-        'Dribles': 100, 'Disputas no ataque': 150, 'Chutes': 100,
-
-        # General
-        'Gols': 30, 'Assistências': 20, 'xG': 25, 'Faltas': 50
-    }
-
-    return max_values

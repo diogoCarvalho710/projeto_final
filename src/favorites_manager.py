@@ -230,15 +230,15 @@ class FavoritesManager:
 
         return False
 
-    def show_favorites_ui(self):
-        """Show comprehensive favorites management UI"""
+    def show_favorites_ui_updated(self):
+        """Show comprehensive favorites management UI (without suggestions tab)"""
 
-        st.subheader("Favorite Players Management")
+        st.subheader("⭐ Favorite Players Management")
 
         favorites = self.load_favorites()
 
         if not favorites:
-            st.info("No favorite players yet. Add players to favorites from the scouting page!")
+            st.info("No favorite players yet. Add players to favorites from player profiles!")
             self._show_favorites_help()
             return
 
@@ -247,8 +247,8 @@ class FavoritesManager:
 
         st.markdown("---")
 
-        # Main tabs
-        tab1, tab2, tab3, tab4 = st.tabs(["Browse Favorites", "Collections", "Analytics", "Bulk Actions"])
+        # Main tabs (removed suggestions tab as requested)
+        tab1, tab2, tab3 = st.tabs(["Browse Favorites", "Collections", "Bulk Actions"])
 
         with tab1:
             self._show_browse_favorites(favorites)
@@ -257,9 +257,6 @@ class FavoritesManager:
             self._show_collections_management()
 
         with tab3:
-            self._show_favorites_analytics(favorites)
-
-        with tab4:
             self._show_bulk_actions(favorites)
 
     def _show_favorites_dashboard(self, favorites: Dict):
@@ -610,7 +607,7 @@ class FavoritesManager:
     def _show_collections_management(self):
         """Show collections management interface"""
 
-        st.subheader("Collections Management")
+        st.subheader("📁 Collections Management")
 
         collections = self.get_all_collections()
 
@@ -655,81 +652,10 @@ class FavoritesManager:
                         players_text += f" and {len(collection_favorites) - 10} more..."
                     st.caption(f"Players: {players_text}")
 
-    def _show_favorites_analytics(self, favorites: Dict):
-        """Show analytics about favorites"""
-
-        st.subheader("Favorites Analytics")
-
-        if not favorites:
-            st.info("No favorites data for analytics")
-            return
-
-        # Age distribution
-        ages = [fav.get('age', 0) for fav in favorites.values()]
-        age_ranges = {'Under 20': 0, '20-25': 0, '26-30': 0, '31-35': 0, 'Over 35': 0}
-
-        for age in ages:
-            if age < 20:
-                age_ranges['Under 20'] += 1
-            elif age <= 25:
-                age_ranges['20-25'] += 1
-            elif age <= 30:
-                age_ranges['26-30'] += 1
-            elif age <= 35:
-                age_ranges['31-35'] += 1
-            else:
-                age_ranges['Over 35'] += 1
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.markdown("**Age Distribution:**")
-            for age_range, count in age_ranges.items():
-                if count > 0:
-                    st.markdown(f"• {age_range}: {count}")
-
-        # Position distribution
-        with col2:
-            positions = {}
-            for fav in favorites.values():
-                pos = fav.get('position', 'Unknown')
-                positions[pos] = positions.get(pos, 0) + 1
-
-            st.markdown("**Position Distribution:**")
-            for pos, count in sorted(positions.items(), key=lambda x: x[1], reverse=True):
-                st.markdown(f"• {pos}: {count}")
-
-        # Team distribution
-        st.markdown("**Team Distribution:**")
-        teams = {}
-        for fav in favorites.values():
-            team = fav.get('team', 'Unknown')
-            teams[team] = teams.get(team, 0) + 1
-
-        top_teams = sorted(teams.items(), key=lambda x: x[1], reverse=True)[:10]
-        for team, count in top_teams:
-            st.markdown(f"• {team}: {count}")
-
-        # Recent additions
-        st.markdown("**Recent Additions (Last 7 days):**")
-        recent_favorites = []
-        cutoff_date = datetime.now().strftime('%Y-%m-%d')
-
-        for fav in favorites.values():
-            added_date = fav.get('added_date', '')
-            if added_date >= cutoff_date:
-                recent_favorites.append(fav)
-
-        if recent_favorites:
-            for fav in recent_favorites[-5:]:  # Last 5
-                st.markdown(f"• {fav['name']} ({fav['position']}) - {fav['team']}")
-        else:
-            st.caption("No recent additions")
-
     def _show_bulk_actions(self, favorites: Dict):
         """Show bulk action interface"""
 
-        st.subheader("Bulk Actions")
+        st.subheader("🔧 Bulk Actions")
 
         if not favorites:
             st.info("No favorites for bulk actions")
@@ -788,7 +714,7 @@ class FavoritesManager:
 
         # Bulk update section
         st.markdown("---")
-        st.markdown("**Bulk Update:**")
+        st.markdown("**🔄 Bulk Update:**")
 
         col1, col2, col3 = st.columns(3)
 
@@ -826,7 +752,7 @@ class FavoritesManager:
 
         # Cleanup section
         st.markdown("---")
-        st.markdown("**Cleanup Actions:**")
+        st.markdown("**🧹 Cleanup Actions:**")
 
         col1, col2 = st.columns(2)
 
@@ -891,7 +817,7 @@ class FavoritesManager:
         with st.expander("💡 How to Use Favorites System"):
             st.markdown("""
             **Getting Started:**
-            1. Add players from the Scouting page using the ➕ buttons
+            1. Add players from Player Profile pages using the ⭐ button
             2. Organize players with collections, tags, and priorities
             3. Track scouting progress with status updates
             4. Add notes and ratings for detailed analysis
@@ -908,10 +834,6 @@ class FavoritesManager:
             - Export/import favorites for backup
             - Bulk update priorities, statuses, or collections
             - Clean up rejected players
-
-            **Analytics:**
-            - View distribution by age, position, team
-            - Track recent additions and trends
             """)
 
     def export_favorites_json(self) -> Optional[str]:
@@ -997,7 +919,7 @@ class FavoritesManager:
 
             # Save updated favorites
             if self.save_favorites(existing_favorites):
-                st.success(f"Import successful: {new_count} new favorites, {updated_count} updated")
+                st.success(f"✅ Import successful: {new_count} new favorites, {updated_count} updated")
                 return True
             else:
                 st.error("Failed to save imported favorites")
@@ -1009,144 +931,3 @@ class FavoritesManager:
         except Exception as e:
             st.error(f"Error importing favorites: {str(e)}")
             return False
-
-    def get_favorite_suggestions(self, position: str, limit: int = 5) -> List[Dict]:
-        """Get player suggestions based on existing favorites"""
-
-        favorites = self.load_favorites()
-        if not favorites:
-            return []
-
-        # Get favorite players' characteristics
-        favorite_teams = set()
-        favorite_nationalities = set()
-        age_ranges = []
-
-        for fav in favorites.values():
-            if fav.get('position') == position:
-                favorite_teams.add(fav.get('team', ''))
-                favorite_nationalities.add(fav.get('nationality', ''))
-                age_ranges.append(fav.get('age', 25))
-
-        if not age_ranges:
-            return []
-
-        avg_age = sum(age_ranges) / len(age_ranges)
-        age_tolerance = 3
-
-        # Find similar players not in favorites
-        if position not in self.data_processor.dataframes:
-            return []
-
-        position_df = self.data_processor.dataframes[position]
-        suggestions = []
-
-        for _, player in position_df.iterrows():
-            player_name = player.get('Jogador', '')
-            player_team = player.get('Time', '')
-            player_age = player.get('Idade', 99)
-            player_nationality = player.get('Nacionalidade', '')
-
-            # Skip if already in favorites
-            if self.is_favorite(player_name, position, player_team):
-                continue
-
-            # Calculate similarity score
-            score = 0
-
-            # Age similarity
-            if abs(player_age - avg_age) <= age_tolerance:
-                score += 30
-
-            # Team similarity (but not same team)
-            if player_team in favorite_teams and player_team != '':
-                score += 20
-
-            # Nationality similarity
-            if player_nationality in favorite_nationalities and player_nationality != '':
-                score += 25
-
-            # Playing time (prefer regular players)
-            minutes = player.get('Minutos jogados', 0)
-            if minutes > 1000:
-                score += 15
-            elif minutes > 500:
-                score += 10
-
-            # Performance metrics (basic)
-            if position in ['PL', 'EE', 'ED']:  # Attacking players
-                goals = player.get('Gols', 0)
-                assists = player.get('Assistências', 0)
-                if goals + assists > 5:
-                    score += 10
-            elif position in ['DCE', 'DCD', 'MCD']:  # Defensive players
-                tackles = player.get('Desarmes', 0)
-                interceptions = player.get('Interceptações', 0)
-                if tackles + interceptions > 50:
-                    score += 10
-
-            if score > 30:  # Minimum threshold
-                suggestions.append({
-                    'name': player_name,
-                    'team': player_team,
-                    'age': int(player_age),
-                    'nationality': player_nationality,
-                    'minutes': int(minutes),
-                    'similarity_score': score,
-                    'position': position
-                })
-
-        # Sort by similarity score and return top suggestions
-        suggestions.sort(key=lambda x: x['similarity_score'], reverse=True)
-        return suggestions[:limit]
-
-    def show_suggestions_ui(self):
-        """Show player suggestions based on favorites"""
-
-        st.subheader("🎯 Player Suggestions")
-        st.caption("Based on your favorite players' characteristics")
-
-        favorites = self.load_favorites()
-        if not favorites:
-            st.info("Add some favorite players first to get personalized suggestions!")
-            return
-
-        # Get positions with favorites
-        positions_with_favs = set(fav.get('position') for fav in favorites.values())
-
-        for position in positions_with_favs:
-            suggestions = self.get_favorite_suggestions(position)
-
-            if suggestions:
-                st.markdown(f"**{position} Suggestions:**")
-
-                for i, suggestion in enumerate(suggestions):
-                    col1, col2, col3 = st.columns([3, 1, 1])
-
-                    with col1:
-                        st.markdown(f"**{i + 1}. {suggestion['name']}**")
-                        st.caption(f"{suggestion['team']} | Age: {suggestion['age']} | {suggestion['nationality']}")
-                        st.caption(
-                            f"Minutes: {suggestion['minutes']:,} | Similarity: {suggestion['similarity_score']}%")
-
-                    with col2:
-                        if st.button("👁️ View", key=f"view_sugg_{position}_{i}", help="View player profile"):
-                            st.session_state.selected_player = {
-                                'name': suggestion['name'],
-                                'position': position
-                            }
-                            st.session_state.current_page = 'player_profile'
-                            st.rerun()
-
-                    with col3:
-                        if st.button("⭐ Add", key=f"add_sugg_{position}_{i}", help="Add to favorites"):
-                            if self.add_to_favorites(
-                                    suggestion['name'],
-                                    position,
-                                    reason="Suggested based on favorites",
-                                    tags=["suggestion"],
-                                    collection="Suggestions"
-                            ):
-                                st.rerun()
-
-                st.markdown("---")

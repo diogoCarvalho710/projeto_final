@@ -369,8 +369,8 @@ class CustomMetricsManager:
 
         return custom_values.round(2)
 
-    def show_manage_metrics_ui(self):
-        """Show UI for managing existing custom metrics"""
+    def show_manage_metrics_ui_updated(self):
+        """Show UI for managing existing custom metrics (without Test and Copy buttons)"""
 
         st.subheader("📋 Manage Custom Metrics")
 
@@ -433,7 +433,7 @@ class CustomMetricsManager:
             with st.expander(f"📍 {position} Metrics ({len(metrics)})", expanded=True):
 
                 for metric_id, metric_config in metrics:
-                    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+                    col1, col2 = st.columns([4, 1])  # Removed Test and Copy columns
 
                     with col1:
                         st.markdown(f"**{metric_config['name']}**")
@@ -450,15 +450,10 @@ class CustomMetricsManager:
                         ])
                         st.caption(f"📊 Components: {components_text}")
 
+                        # Add info about usage in scouting
+                        st.caption("💡 This metric can be used as a column in the Scouting table")
+
                     with col2:
-                        if st.button("🧪 Test", key=f"test_{metric_id}", help="Test metric on current data"):
-                            self._test_custom_metric(metric_config)
-
-                    with col3:
-                        if st.button("📋 Copy", key=f"copy_{metric_id}", help="Copy metric for editing"):
-                            self._copy_metric_to_creator(metric_config)
-
-                    with col4:
                         if st.button("🗑️ Delete", key=f"delete_{metric_id}", help="Delete metric"):
                             if self.delete_custom_metric(metric_id):
                                 st.success(f"Deleted {metric_config['name']}")
@@ -466,50 +461,34 @@ class CustomMetricsManager:
 
                     st.markdown("---")
 
-    def _test_custom_metric(self, metric_config: Dict):
-        """Test a custom metric and show results"""
+    def get_custom_metrics_for_scouting(self, position: str) -> Dict:
+        """Get custom metrics that can be used as columns in scouting table"""
 
-        position = metric_config['position']
-        if position not in self.data_processor.dataframes:
-            st.error(f"Position {position} data not available")
-            return
+        custom_metrics = self.load_custom_metrics()
+        position_metrics = {}
 
-        df = self.data_processor.dataframes[position]
-        custom_values = self.calculate_custom_metric(df, metric_config)
+        for metric_id, metric_config in custom_metrics.items():
+            if metric_config.get('position') == position:
+                position_metrics[metric_id] = metric_config
 
-        # Create test results
-        test_df = df[['Jogador', 'Time', 'Idade']].copy()
-        test_df[metric_config['name']] = custom_values
-        test_df = test_df.sort_values(metric_config['name'], ascending=False)
+        return position_metrics
 
-        st.markdown(f"**🧪 Test Results for '{metric_config['name']}':**")
+    def calculate_custom_metrics_for_dataframe(self, df: pd.DataFrame, position: str) -> pd.DataFrame:
+        """Calculate all custom metrics for a dataframe and add them as columns"""
 
-        # Show top 10 with ranking
-        display_df = test_df.head(10).copy()
-        display_df.insert(0, 'Rank', range(1, len(display_df) + 1))
-        st.dataframe(display_df, use_container_width=True)
+        custom_metrics = self.get_custom_metrics_for_scouting(position)
+        result_df = df.copy()
 
-        # Show statistics
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Top Score", f"{custom_values.max():.2f}")
-        with col2:
-            st.metric("Average", f"{custom_values.mean():.2f}")
-        with col3:
-            st.metric("Median", f"{custom_values.median():.2f}")
-        with col4:
-            st.metric("Std Dev", f"{custom_values.std():.2f}")
+        for metric_id, metric_config in custom_metrics.items():
+            try:
+                metric_values = self.calculate_custom_metric(df, metric_config)
+                column_name = f"Custom_{metric_config['name'].replace(' ', '_')}"
+                result_df[column_name] = metric_values
+            except Exception as e:
+                print(f"Error calculating custom metric {metric_config['name']}: {e}")
+                continue
 
-    def _copy_metric_to_creator(self, metric_config: Dict):
-        """Copy metric configuration to the creator form"""
-
-        position = metric_config['position']
-        components_key = f'custom_metric_components_{position}'
-
-        # Copy components to session state
-        st.session_state[components_key] = metric_config['components'].copy()
-
-        st.success(f"📋 Copied '{metric_config['name']}' components to creator. Switch to Create tab to modify.")
+        return result_df
 
     def delete_custom_metric(self, metric_id: str) -> bool:
         """Delete a custom metric"""

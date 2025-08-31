@@ -25,16 +25,13 @@ def show_team_dashboard():
     # Team statistics
     show_team_stats(analysis['stats'])
 
-    # Navigation tabs
-    tab1, tab2, tab3 = st.tabs(["📋 Squad List", "⚽ Formation", "📊 Statistics"])
+    # Navigation tabs (removed Formation tab as requested)
+    tab1, tab2 = st.tabs(["📋 Squad List", "📊 Statistics"])
 
     with tab1:
         show_squad_list(analysis, team_manager)
 
     with tab2:
-        show_formation_view(team_manager, team)
-
-    with tab3:
         show_detailed_stats(analysis)
 
 
@@ -121,20 +118,34 @@ def show_position_players(df, team_manager, is_starter: bool, position: str):
 
 
 def show_player_card(player_data: dict, unique_id: str = ""):
-    """Display individual player card"""
+    """Display individual player card with clickable name"""
 
-    # Card styling without border rectangles
     status_icon = "🟢" if player_data['is_starter'] else "⚪"
 
     # Create unique key
     card_key = f"player_{unique_id}_{player_data['name']}_{player_data['minutes']}"
 
     with st.container():
-        # Player header
+        # Player header with clickable name
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.markdown(f"**{status_icon} {player_data['name']}**")
+            # Make player name clickable
+            if st.button(
+                    f"{status_icon} {player_data['name']}",
+                    key=f"name_{card_key}",
+                    help="Click to view player profile",
+                    use_container_width=True
+            ):
+                # Store player info for profile page
+                st.session_state.selected_player = {
+                    'name': player_data['name'],
+                    'position': player_data['position_file']
+                }
+                st.session_state.show_player_profile = True
+                st.rerun()
+
             st.caption(f"Age: {player_data['age']} | {player_data['nationality']}")
+
         with col2:
             if st.button("👁️", key=f"view_{card_key}", help="View Profile"):
                 # Store player info for profile page
@@ -159,80 +170,6 @@ def show_player_card(player_data: dict, unique_id: str = ""):
 
         # Add subtle separator
         st.markdown("---")
-
-
-def show_formation_view(team_manager, team: str):
-    """Display simple formation view"""
-    st.subheader("⚽ Starting XI")
-
-    formation_data = team_manager.get_formation_data(team)
-
-    # Simple formation display
-    formation_order = [('🥅 Goalkeeper', 'GK'), ('🛡️ Defense', 'DEF'), ('⚽ Midfield', 'MID'), ('🎯 Attack', 'ATT')]
-
-    for line_name, line_key in formation_order:
-        if line_key in formation_data and formation_data[line_key]:
-            st.markdown(f"**{line_name} ({len(formation_data[line_key])} players)**")
-
-            players = formation_data[line_key]
-
-            # Show players in a row
-            if len(players) <= 4:
-                cols = st.columns(len(players))
-                for i, player in enumerate(players):
-                    with cols[i]:
-                        show_formation_card(player, f"{line_key}_{i}")
-            else:
-                # If more than 4 players, show in multiple rows
-                for i in range(0, len(players), 4):
-                    row_players = players[i:i + 4]
-                    cols = st.columns(len(row_players))
-                    for j, player in enumerate(row_players):
-                        with cols[j]:
-                            show_formation_card(player, f"{line_key}_{i}_{j}")
-
-            st.markdown("---")
-
-    # Formation summary
-    formation_counts = []
-    for line_key in ['DEF', 'MID', 'ATT']:
-        count = len(formation_data.get(line_key, []))
-        if count > 0:
-            formation_counts.append(str(count))
-
-    if formation_counts:
-        st.info(f"🏟️ Formation: {'-'.join(formation_counts)}")
-
-
-def show_formation_card(player_data: dict, unique_id: str):
-    """Display player card for formation view"""
-
-    # Simple formation card without border rectangles
-    st.markdown(f"""
-    <div style="
-        text-align: center;
-        padding: 10px;
-        margin: 5px auto;
-        max-width: 150px;
-    ">
-        <div style="font-weight: bold; color: #ffffff; margin-bottom: 5px;">
-            {player_data.get('name', 'Unknown')}
-        </div>
-        <div style="color: #cccccc; font-size: 0.85em;">
-            {player_data.get('age', 'N/A')} | {player_data.get('minutes', 0)} min
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Add view button with unique key
-    button_key = f"formation_{unique_id}_{player_data.get('name', '')}_{player_data.get('minutes', 0)}"
-    if st.button("View", key=button_key, help=f"View {player_data.get('name')} profile"):
-        st.session_state.selected_player = {
-            'name': player_data.get('name'),
-            'position': player_data.get('position_file')
-        }
-        st.session_state.show_player_profile = True
-        st.rerun()
 
 
 def show_detailed_stats(analysis: dict):

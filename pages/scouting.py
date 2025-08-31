@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from typing import List, Dict
 from src.ranking_system import RankingSystem
-from src.comparison_manager import ComparisonManager
 from components.filters import ScoutingFilters, FilterValidator
 from components.charts import ScoutingCharts
 
@@ -19,14 +18,7 @@ def show_scouting():
         if 'ranking_system' not in st.session_state or st.session_state.ranking_system is None:
             st.session_state.ranking_system = RankingSystem(st.session_state.data_processor)
 
-        if 'comparison_manager' not in st.session_state or st.session_state.comparison_manager is None:
-            st.session_state.comparison_manager = ComparisonManager(
-                st.session_state.data_processor,
-                st.session_state.ranking_system
-            )
-
         ranking_system = st.session_state.ranking_system
-        comparison_manager = st.session_state.comparison_manager
         current_team = st.session_state.selected_team
 
     except Exception as e:
@@ -35,25 +27,16 @@ def show_scouting():
 
     # Page header
     st.title("🔍 Advanced Scouting System")
+    st.markdown(f"**Current Team:** {current_team} | Find and analyze players across Liga 2")
 
-    # Show comparison summary if players selected
-    comparison_count = comparison_manager.get_comparison_count()
-    if comparison_count > 0:
-        st.info(f"📊 **{comparison_count}/5 players** in comparison - Use right panel to analyze")
-
-    st.markdown(f"**Current Team:** {current_team} | Find and compare players across Liga 2")
-
-    # Main layout - 3 columns
-    filter_col, results_col, comparison_col = st.columns([1, 2, 1])
+    # Main layout - 2 columns (removed comparison column)
+    filter_col, results_col = st.columns([1, 3])
 
     with filter_col:
         show_filters_panel(ranking_system, current_team)
 
     with results_col:
-        show_results_panel(ranking_system, comparison_manager, current_team)
-
-    with comparison_col:
-        show_comparison_panel(comparison_manager)
+        show_results_panel(ranking_system, current_team)
 
 
 def show_filters_panel(ranking_system: RankingSystem, current_team: str):
@@ -112,17 +95,8 @@ def show_filters_panel(ranking_system: RankingSystem, current_team: str):
 
     # Quick actions
     st.markdown("**🚀 Quick Actions:**")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🗑️ Clear Filters", key="clear_scout_filters", use_container_width=True):
-            ScoutingFilters.clear_filters()
-
-    with col2:
-        if st.button("⚡ Reset All", key="reset_all", use_container_width=True):
-            ScoutingFilters.clear_filters()
-            st.session_state.comparison_players = []
-            st.rerun()
+    if st.button("🗑️ Clear Filters", key="clear_scout_filters", use_container_width=True):
+        ScoutingFilters.clear_filters()
 
     # Store filters in session state
     st.session_state.scout_filters = {
@@ -138,7 +112,7 @@ def show_filters_panel(ranking_system: RankingSystem, current_team: str):
     }
 
 
-def show_results_panel(ranking_system: RankingSystem, comparison_manager: ComparisonManager, current_team: str):
+def show_results_panel(ranking_system: RankingSystem, current_team: str):
     """Show results panel with rankings"""
 
     st.subheader("🏆 Search Results")
@@ -178,16 +152,16 @@ def show_results_panel(ranking_system: RankingSystem, comparison_manager: Compar
         st.success(f"✅ Found **{len(ranked_df)}** players matching filters")
 
         # Results tabs
-        results_tab1, results_tab2, results_tab3 = st.tabs(["🏆 Rankings", "📊 Charts", "📈 Analysis"])
+        results_tab1, results_tab2, results_tab3 = st.tabs(["🏆 Rankings", "📊 Charts", "⚙️ Table Settings"])
 
         with results_tab1:
-            show_rankings_tab(ranked_df, ranking_info, position, comparison_manager)
+            show_rankings_tab(ranked_df, ranking_info, position)
 
         with results_tab2:
             show_charts_tab(ranked_df, ranking_info, position)
 
         with results_tab3:
-            show_analysis_tab(ranked_df, position, comparison_manager)
+            show_table_settings_tab(ranked_df, ranking_info, position)
 
     except Exception as e:
         st.error(f"Error processing results: {str(e)}")
@@ -235,59 +209,20 @@ def get_filtered_results(ranking_system: RankingSystem, filters: Dict, position:
     return filtered_df
 
 
-def show_rankings_tab(ranked_df: pd.DataFrame, ranking_info: Dict, position: str,
-                      comparison_manager: ComparisonManager):
-    """Show rankings table with comparison options"""
+def show_rankings_tab(ranked_df: pd.DataFrame, ranking_info: Dict, position: str):
+    """Show rankings table"""
 
     if ranked_df.empty:
         return
 
-    # Show rankings table
+    # Show rankings table (without percentiles as requested)
     ranking_metrics = [metric[0] for metric in ranking_info.get('metrics', [])]
     ScoutingCharts.show_rankings_table(
         ranked_df,
         ranking_metrics,
-        show_percentiles=True,
+        show_percentiles=False,  # Changed to False
         max_rows=50
     )
-
-    st.markdown("---")
-    st.markdown("**🔄 Add Players to Comparison:**")
-
-    # Quick add top players
-    top_players = ranked_df.head(5)['Jogador'].tolist()
-
-    if len(top_players) > 0:
-        st.markdown("**⚡ Quick Add Top Players:**")
-        cols = st.columns(min(3, len(top_players)))
-        for i, player in enumerate(top_players[:3]):
-            with cols[i]:
-                if st.button(f"➕ {player}", key=f"quick_add_{position}_{player}_{i}", use_container_width=True):
-                    comparison_manager.add_player(player, position, ranked_df)
-                    st.rerun()
-
-    # Advanced add options
-    with st.expander("🔍 Advanced Add Options"):
-
-        # Select any player
-        all_players = ranked_df['Jogador'].tolist()
-        selected_player = st.selectbox(
-            "Select any player:",
-            all_players,
-            key=f"select_any_{position}"
-        )
-
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("➕ Add Selected", key=f"add_selected_{position}"):
-                comparison_manager.add_player(selected_player, position, ranked_df)
-                st.rerun()
-
-        with col2:
-            if st.button("🎯 Add + Similar", key=f"add_similar_{position}"):
-                comparison_manager.add_player(selected_player, position, ranked_df)
-                comparison_manager.batch_add_similar_players(selected_player, position, 2)
-                st.rerun()
 
 
 def show_charts_tab(ranked_df: pd.DataFrame, ranking_info: Dict, position: str):
@@ -301,7 +236,7 @@ def show_charts_tab(ranked_df: pd.DataFrame, ranking_info: Dict, position: str):
     # Chart selection
     chart_type = st.selectbox(
         "📊 Select Visualization:",
-        ["Scatter Plot", "Distribution Analysis", "Age Trends", "Performance Heatmap"],
+        ["Scatter Plot", "Distribution Analysis", "Age Trends"],
         key=f"chart_type_{position}"
     )
 
@@ -314,15 +249,9 @@ def show_charts_tab(ranked_df: pd.DataFrame, ranking_info: Dict, position: str):
                                     index=1 if len(ranking_metrics) > 1 else 0)
 
         if x_metric and y_metric:
-            # Highlight comparison players
-            highlight_players = []
-            if st.session_state.get('comparison_players'):
-                highlight_players = [p['name'] for p in st.session_state.comparison_players]
-
             ScoutingCharts.show_scatter_plot(
                 ranked_df, x_metric, y_metric,
-                color_by='Time',
-                highlight_players=highlight_players
+                color_by='Time'
             )
 
     elif chart_type == "Distribution Analysis":
@@ -335,11 +264,100 @@ def show_charts_tab(ranked_df: pd.DataFrame, ranking_info: Dict, position: str):
         if selected_metric:
             ScoutingCharts.show_metric_trends(ranked_df, selected_metric, 'Idade')
 
-    elif chart_type == "Performance Heatmap":
-        st.info("🚧 Performance heatmap coming in next update!")
+
+def show_table_settings_tab(ranked_df: pd.DataFrame, ranking_info: Dict, position: str):
+    """Show table customization settings"""
+
+    if ranked_df.empty:
+        return
+
+    st.subheader("📋 Customize Table Columns")
+
+    # Get all available numeric columns
+    exclude_cols = ['Jogador', 'Time', 'Nacionalidade', 'Pé', 'Altura', 'Valor de mercado',
+                    'Data de nascimento', 'Contrato expira em', 'Posição', 'Temporada',
+                    'Index', 'Position_File']
+
+    available_columns = []
+    for col in ranked_df.columns:
+        if col not in exclude_cols and not col.endswith('_percentile'):
+            available_columns.append(col)
+
+    # Always include basic info columns
+    base_columns = ['Jogador', 'Time', 'Idade', 'Minutos jogados']
+
+    # Let user select additional columns
+    selected_columns = st.multiselect(
+        "Select columns to display:",
+        available_columns,
+        default=[col for col in available_columns if col in [metric[0] for metric in ranking_info.get('metrics', [])]],
+        key=f"table_columns_{position}"
+    )
+
+    # Combine base columns with selected columns
+    final_columns = base_columns + selected_columns
+    final_columns = [col for col in final_columns if col in ranked_df.columns]
+
+    # Show customized table
+    display_df = ranked_df[final_columns].head(50).copy()
+    display_df.insert(0, 'Rank', range(1, len(display_df) + 1))
+
+    # Make player name clickable (show as button-like format)
+    st.markdown("**📊 Customized Results Table:**")
+    st.caption("Click on player names to view their profile")
+
+    # Display table with player names as clickable elements
+    for idx, (_, row) in enumerate(display_df.iterrows()):
+        if idx >= 20:  # Limit to first 20 for performance
+            break
+
+        with st.container():
+            col1, col2, col3 = st.columns([1, 6, 1])
+
+            with col1:
+                st.markdown(f"**{idx + 1}**")
+
+            with col2:
+                # Show player info in expandable format
+                with st.expander(f"👤 {row['Jogador']} - {row['Time']} (Age: {row['Idade']})", expanded=False):
+                    # Show selected metrics
+                    cols = st.columns(min(4, len(selected_columns)))
+                    for i, col_name in enumerate(selected_columns[:4]):
+                        if col_name in row.index:
+                            with cols[i]:
+                                st.metric(col_name,
+                                          f"{row[col_name]:.2f}" if isinstance(row[col_name], float) else row[col_name])
+
+                    if len(selected_columns) > 4:
+                        st.markdown("**Additional metrics:**")
+                        for col_name in selected_columns[4:]:
+                            if col_name in row.index:
+                                st.markdown(f"• {col_name}: {row[col_name]:.2f}" if isinstance(row[col_name],
+                                                                                               float) else f"• {col_name}: {row[col_name]}")
+
+            with col3:
+                if st.button("🔍 Profile", key=f"view_profile_{idx}_{row['Jogador']}",
+                             help=f"View {row['Jogador']} profile"):
+                    st.session_state.selected_player = {
+                        'name': row['Jogador'],
+                        'position': position
+                    }
+                    st.session_state.show_player_profile = True
+                    st.rerun()
+
+    # Export option
+    st.markdown("---")
+    if st.button("📥 Export Table as CSV", key=f"export_csv_{position}"):
+        csv_data = display_df.to_csv(index=False)
+        st.download_button(
+            "Download CSV",
+            csv_data,
+            f"{position}_scouting_results.csv",
+            "text/csv"
+        )
 
 
-def show_analysis_tab(ranked_df: pd.DataFrame, position: str, comparison_manager: ComparisonManager):
+def show_analysis_tab(ranked_df: pd.DataFrame, position: str):
     """Show statistical analysis and insights"""
 
     if ranked_df.empty:
@@ -366,44 +384,6 @@ def show_analysis_tab(ranked_df: pd.DataFrame, position: str, comparison_manager
         unique_teams = ranked_df['Time'].nunique()
         st.metric("Teams", unique_teams)
 
-    st.markdown("---")
-
-    # Top performers analysis
-    st.markdown("### 🏅 Top Performers by Metric")
-
-    ranking_info = st.session_state.ranking_system.get_ranking_description(position)
-    ranking_metrics = [metric[0] for metric in ranking_info.get('metrics', [])]
-
-    selected_metric = st.selectbox(
-        "Choose metric to analyze:",
-        ranking_metrics,
-        key=f"analysis_metric_{position}"
-    )
-
-    if selected_metric:
-        # Show top 5 for this metric
-        top_performers = ranked_df.nlargest(5, selected_metric)
-
-        st.markdown(f"**🎯 Top 5 in {selected_metric}:**")
-
-        for i, (_, player) in enumerate(top_performers.iterrows()):
-            col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
-
-            with col1:
-                st.markdown(f"**{i + 1}.** {player['Jogador']} ({player['Time']})")
-            with col2:
-                st.markdown(f"**{player[selected_metric]:.2f}**")
-            with col3:
-                percentile_col = f"{selected_metric}_percentile"
-                if percentile_col in player.index:
-                    st.markdown(f"{player[percentile_col]:.0f}th %ile")
-            with col4:
-                if st.button("➕", key=f"add_top_{i}_{player['Jogador']}", help="Add to comparison"):
-                    comparison_manager.add_player(player['Jogador'], position, ranked_df)
-                    st.rerun()
-
-    st.markdown("---")
-
     # Market insights
     st.markdown("### 💰 Market Insights")
 
@@ -413,301 +393,12 @@ def show_analysis_tab(ranked_df: pd.DataFrame, position: str, comparison_manager
 
         with col1:
             st.markdown("**📊 Value Distribution:**")
-            # Simple value categories
             value_counts = ranked_df['Valor de mercado'].value_counts().head(5)
             st.dataframe(value_counts)
 
         with col2:
-            st.markdown("**⭐ Best Value Players:**")
-            # Players with high score and reasonable value
+            st.markdown("**⭐ Best Players by Score:**")
             if 'Overall_Score' in ranked_df.columns:
-                best_value = ranked_df.nlargest(3, 'Overall_Score').head(3)
-                for _, player in best_value.iterrows():
+                best_players = ranked_df.nlargest(3, 'Overall_Score').head(3)
+                for _, player in best_players.iterrows():
                     st.markdown(f"• **{player['Jogador']}** - Score: {player['Overall_Score']:.1f}")
-
-
-def show_comparison_panel(comparison_manager: ComparisonManager):
-    """Show enhanced comparison panel"""
-
-    st.subheader("⚖️ Player Comparison")
-
-    comparison_players = comparison_manager.get_comparison_players()
-    comparison_count = comparison_manager.get_comparison_count()
-
-    if comparison_count == 0:
-        st.info("👆 **Add players** from search results to compare them here")
-
-        # Show help
-        with st.expander("💡 How to Use Comparison"):
-            st.markdown("""
-            **Getting Started:**
-            1. Search for players using filters ⬅️
-            2. Click ➕ buttons to add players
-            3. Compare up to 5 players side-by-side
-
-            **Comparison Features:**
-            - 📊 **Radar Charts**: Visual performance comparison  
-            - 📋 **Stats Table**: Detailed metrics side-by-side
-            - 📈 **Percentiles**: Relative performance rankings
-            - 📥 **Export**: Download comparison as CSV
-            """)
-        return
-
-    # Show current players
-    st.markdown(f"**Selected Players ({comparison_count}/5):**")
-
-    for i, player_info in enumerate(comparison_players):
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            score_text = f"(Score: {player_info['overall_score']:.1f})" if player_info['overall_score'] > 0 else ""
-            st.markdown(f"**{i + 1}.** {player_info['name']} - {player_info['team']} {score_text}")
-            st.caption(f"{player_info['position']} | Age: {player_info['age']} | Minutes: {player_info['minutes']}")
-        with col2:
-            if st.button("❌", key=f"remove_comp_{i}", help="Remove player"):
-                comparison_manager.remove_player(i)
-                st.rerun()
-
-    if comparison_count >= 2:
-        st.markdown("---")
-
-        # Comparison options
-        comparison_type = st.radio(
-            "**Analysis Type:**",
-            ["📊 Radar Chart", "📋 Stats Table", "📈 Percentiles", "🔍 Summary"],
-            key="comparison_type",
-            horizontal=True
-        )
-
-        if comparison_type == "📊 Radar Chart":
-            show_radar_comparison(comparison_manager)
-
-        elif comparison_type == "📋 Stats Table":
-            show_table_comparison(comparison_manager)
-
-        elif comparison_type == "📈 Percentiles":
-            show_percentiles_comparison(comparison_manager)
-
-        elif comparison_type == "🔍 Summary":
-            show_summary_comparison(comparison_manager)
-
-    # Action buttons
-    st.markdown("---")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("🗑️ Clear All", key="clear_comparison", use_container_width=True):
-            comparison_manager.clear_all()
-            st.rerun()
-
-    with col2:
-        if comparison_count >= 2:
-            csv_data = comparison_manager.export_comparison_csv()
-            if csv_data:
-                st.download_button(
-                    "📥 Export CSV",
-                    csv_data,
-                    "player_comparison.csv",
-                    "text/csv",
-                    use_container_width=True
-                )
-
-
-def show_radar_comparison(comparison_manager: ComparisonManager):
-    """Show radar chart comparison"""
-
-    players_data = comparison_manager.get_radar_data()
-
-    if not players_data:
-        st.error("Could not load radar data for comparison players")
-        return
-
-    # Get metrics from first player's position
-    comparison_players = comparison_manager.get_comparison_players()
-    main_position = comparison_players[0]['position']
-
-    ranking_info = st.session_state.ranking_system.get_ranking_description(main_position)
-    metrics = [metric[0] for metric in ranking_info['metrics']]
-
-    ScoutingCharts.show_radar_comparison(
-        players_data,
-        metrics,
-        main_position,
-        "Player Performance Comparison"
-    )
-
-    # Show comparison insights
-    st.markdown("### 🔍 Quick Insights")
-
-    summary = comparison_manager.get_comparison_summary_stats()
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Players", summary['count'])
-    with col2:
-        st.metric("Avg Age", f"{summary['avg_age']:.1f}")
-    with col3:
-        st.metric("Avg Score", f"{summary['avg_score']:.1f}")
-
-
-def show_table_comparison(comparison_manager: ComparisonManager):
-    """Show detailed table comparison"""
-
-    comparison_df = comparison_manager.get_comparison_data()
-
-    if comparison_df.empty:
-        st.error("Could not load comparison data")
-        return
-
-    # Display formatted table
-    st.dataframe(
-        comparison_df,
-        use_container_width=True,
-        height=400
-    )
-
-    # Show column explanations
-    with st.expander("📖 Column Explanations"):
-        st.markdown("""
-        **Basic Info:**
-        - **Position**: Player's primary position
-        - **Age**: Current age
-        - **Minutes**: Total minutes played this season
-        - **Overall Score**: Weighted performance score (0-100)
-
-        **Performance Metrics:**
-        - Values shown are raw numbers from the season
-        - Higher values generally indicate better performance
-        - Compare across similar positions for best insights
-        """)
-
-
-def show_percentiles_comparison(comparison_manager: ComparisonManager):
-    """Show percentiles comparison for all players"""
-
-    percentiles_data = comparison_manager.get_percentiles_data()
-
-    if not percentiles_data:
-        st.error("No percentile data available")
-        return
-
-    # Show percentile bars for each player
-    for player_name, data in percentiles_data.items():
-        st.markdown(f"### {player_name} ({data['team']})")
-
-        # Get ranking metrics for this player's position
-        ranking_info = st.session_state.ranking_system.get_ranking_description(data['position'])
-        if ranking_info:
-            metrics = [metric[0] for metric in ranking_info['metrics']]
-
-            # Create player data for percentile bars
-            player_data = {}
-            for metric in metrics:
-                if metric in data['percentiles']:
-                    player_data[f'{metric}_percentile'] = data['percentiles'][metric]
-
-            if player_data:
-                ScoutingCharts.show_percentile_bars(player_data, metrics, player_name)
-            else:
-                st.warning(f"No percentile data available for {player_name}")
-
-        st.markdown("---")
-
-
-def show_summary_comparison(comparison_manager: ComparisonManager):
-    """Show summary insights and recommendations"""
-
-    comparison_players = comparison_manager.get_comparison_players()
-    summary = comparison_manager.get_comparison_summary_stats()
-
-    # Overview
-    st.markdown("### 📊 Comparison Overview")
-
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Players", summary['count'])
-    with col2:
-        st.metric("Average Age", f"{summary['avg_age']:.1f}")
-    with col3:
-        st.metric("Teams", summary['teams_count'])
-    with col4:
-        st.metric("Positions", summary['positions_count'])
-
-    # Age analysis
-    st.markdown("### 👶 Age Analysis")
-    ages = [p['age'] for p in comparison_players]
-    youngest = min(ages)
-    oldest = max(ages)
-
-    col1, col2 = st.columns(2)
-    with col1:
-        youngest_player = next(p for p in comparison_players if p['age'] == youngest)
-        st.markdown(f"**Youngest:** {youngest_player['name']} ({youngest} years)")
-    with col2:
-        oldest_player = next(p for p in comparison_players if p['age'] == oldest)
-        st.markdown(f"**Oldest:** {oldest_player['name']} ({oldest} years)")
-
-    # Performance analysis
-    st.markdown("### ⚽ Performance Analysis")
-
-    if summary['avg_score'] > 0:
-        scores = [(p['name'], p['overall_score']) for p in comparison_players if p['overall_score'] > 0]
-        if scores:
-            scores.sort(key=lambda x: x[1], reverse=True)
-
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown(f"**Highest Rated:** {scores[0][0]} ({scores[0][1]:.1f})")
-            with col2:
-                if len(scores) > 1:
-                    st.markdown(f"**Lowest Rated:** {scores[-1][0]} ({scores[-1][1]:.1f})")
-
-    # Experience analysis
-    st.markdown("### ⏱️ Experience Analysis")
-
-    minutes = [p['minutes'] for p in comparison_players]
-    most_minutes = max(minutes)
-    least_minutes = min(minutes)
-
-    col1, col2 = st.columns(2)
-    with col1:
-        most_experienced = next(p for p in comparison_players if p['minutes'] == most_minutes)
-        st.markdown(f"**Most Minutes:** {most_experienced['name']} ({most_minutes:,})")
-    with col2:
-        least_experienced = next(p for p in comparison_players if p['minutes'] == least_minutes)
-        st.markdown(f"**Least Minutes:** {least_experienced['name']} ({least_minutes:,})")
-
-    # Teams representation
-    if summary['teams_count'] > 1:
-        st.markdown("### 🏆 Teams Represented")
-        for team in summary['teams']:
-            team_players = [p['name'] for p in comparison_players if p['team'] == team]
-            st.markdown(f"**{team}:** {', '.join(team_players)}")
-
-    # Quick recommendations
-    st.markdown("### 💡 Quick Insights")
-
-    insights = []
-
-    # Age diversity
-    age_range = oldest - youngest
-    if age_range > 8:
-        insights.append("🎯 **High age diversity** - Good mix of experience levels")
-    elif age_range < 3:
-        insights.append("👥 **Similar age group** - Consistent experience level")
-
-    # Experience diversity
-    minutes_range = most_minutes - least_minutes
-    if minutes_range > 1500:
-        insights.append("⚖️ **Mixed experience** - From regulars to squad players")
-    elif minutes_range < 500:
-        insights.append("🎪 **Similar playing time** - All regular players")
-
-    # Multi-team comparison
-    if summary['teams_count'] >= 3:
-        insights.append("🌍 **Multi-team comparison** - Good market overview")
-
-    for insight in insights:
-        st.markdown(insight)
-
-    if not insights:
-        st.info("Add more players for detailed insights!")

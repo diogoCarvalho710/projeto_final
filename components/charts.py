@@ -265,7 +265,7 @@ class ScoutingCharts:
     @staticmethod
     def show_rankings_table(df: pd.DataFrame, ranking_metrics: List[str],
                             show_percentiles: bool = True, max_rows: int = 20) -> None:
-        """Show rankings table with formatting"""
+        """Show rankings table with formatting (original method)"""
 
         if df.empty:
             st.warning("No data available for rankings table")
@@ -291,6 +291,83 @@ class ScoutingCharts:
 
         # Add overall score if available
         if 'Overall_Score' in display_df.columns:
+            metric_columns.insert(0, 'Overall_Score')
+
+        # Select final columns
+        final_columns = base_columns + metric_columns
+        display_columns = [col for col in final_columns if col in display_df.columns]
+
+        display_df = display_df[display_columns].head(max_rows)
+
+        # Format column names for display
+        column_renames = {}
+        for col in display_df.columns:
+            if col.endswith('_percentile'):
+                base_name = col.replace('_percentile', '')
+                short_name = ScoutingCharts._shorten_metric_name(base_name)
+                column_renames[col] = f"{short_name} %ile"
+            else:
+                column_renames[col] = ScoutingCharts._format_column_name(col)
+
+        display_df = display_df.rename(columns=column_renames)
+
+        # Add ranking numbers
+        display_df.insert(0, 'Rank', range(1, len(display_df) + 1))
+
+        # Format numeric columns
+        for col in display_df.columns:
+            if col in ['Overall Score', 'Minutes Played', 'Age']:
+                display_df[col] = display_df[col].astype(int)
+            elif col.endswith('%ile') or col.endswith('Score'):
+                display_df[col] = display_df[col].round(1)
+            elif display_df[col].dtype in ['float64', 'float32']:
+                display_df[col] = display_df[col].round(2)
+
+        # Display table with styling
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            height=min(600, len(display_df) * 35 + 100),
+            column_config={
+                'Rank': st.column_config.NumberColumn('Rank', width="small"),
+                'Player': st.column_config.TextColumn('Player', width="medium"),
+                'Team': st.column_config.TextColumn('Team', width="medium"),
+            }
+        )
+
+    @staticmethod
+    def show_rankings_table_updated(df: pd.DataFrame, ranking_metrics: List[str],
+                                    show_percentiles: bool = False, max_rows: int = 20,
+                                    selected_columns: List[str] = None) -> None:
+        """Show rankings table with customizable columns (updated method)"""
+
+        if df.empty:
+            st.warning("No data available for rankings table")
+            return
+
+        # Prepare display dataframe
+        display_df = df.copy()
+
+        # Select columns to display
+        base_columns = ['Jogador', 'Time', 'Idade', 'Minutos jogados']
+
+        # If custom columns are selected, use those; otherwise use ranking metrics
+        if selected_columns:
+            metric_columns = [col for col in selected_columns if col in display_df.columns]
+        else:
+            metric_columns = []
+            for metric in ranking_metrics:
+                if metric in display_df.columns:
+                    metric_columns.append(metric)
+
+                # Add percentile column if requested
+                if show_percentiles:
+                    percentile_col = f'{metric}_percentile'
+                    if percentile_col in display_df.columns:
+                        metric_columns.append(percentile_col)
+
+        # Add overall score if available and not in custom columns
+        if 'Overall_Score' in display_df.columns and (not selected_columns or 'Overall_Score' not in selected_columns):
             metric_columns.insert(0, 'Overall_Score')
 
         # Select final columns
